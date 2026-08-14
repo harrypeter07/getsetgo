@@ -7,13 +7,30 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const videoId = formData.get('videoId') as string;
-    const chunkIndexStr = formData.get('chunkIndex') as string;
-    const chunkFile = formData.get('chunk') as File | null;
+    let videoId: string | null = null;
+    let chunkIndexStr: string | null = null;
+    let buffer: Buffer | null = null;
 
-    if (!videoId || chunkIndexStr === null || !chunkFile) {
-      return NextResponse.json({ error: 'Missing videoId, chunkIndex or chunk file' }, { status: 400 });
+    const contentType = req.headers.get('content-type') || '';
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await req.formData();
+      videoId = formData.get('videoId') as string;
+      chunkIndexStr = formData.get('chunkIndex') as string;
+      const chunkFile = formData.get('chunk') as File | null;
+      if (chunkFile) {
+        const ab = await chunkFile.arrayBuffer();
+        buffer = Buffer.from(ab);
+      }
+    } else {
+      videoId = req.headers.get('x-video-id');
+      chunkIndexStr = req.headers.get('x-chunk-index');
+      const ab = await req.arrayBuffer();
+      buffer = Buffer.from(ab);
+    }
+
+    if (!videoId || chunkIndexStr === null || !buffer) {
+      return NextResponse.json({ error: 'Missing videoId, chunkIndex or chunk body' }, { status: 400 });
     }
 
     const chunkIndex = parseInt(chunkIndexStr, 10);
@@ -21,14 +38,13 @@ export async function POST(req: NextRequest) {
     fs.mkdirSync(chunkDir, { recursive: true });
 
     const chunkPath = path.join(chunkDir, `chunk_${String(chunkIndex).padStart(5, '0')}`);
-    const bytes = await chunkFile.arrayBuffer();
-    fs.writeFileSync(chunkPath, Buffer.from(bytes));
+    fs.writeFileSync(chunkPath, buffer);
 
     return NextResponse.json({
       success: true,
       videoId,
       chunkIndex,
-      bytesReceived: bytes.byteLength,
+      bytesReceived: buffer.byteLength,
     });
   } catch (err: any) {
     console.error('[Upload Chunk Error]:', err);

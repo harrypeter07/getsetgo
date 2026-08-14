@@ -150,23 +150,40 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           let res: Response;
 
           if (isDirectB2) {
-            const b2FileName = encodeURIComponent(`raw/${videoId}_parts/chunk_${String(chunkIndex).padStart(5, '0')}`);
-            res = await fetch(b2UploadUrl, {
+            try {
+              const b2FileName = encodeURIComponent(`raw/${videoId}_parts/chunk_${String(chunkIndex).padStart(5, '0')}`);
+              res = await fetch(b2UploadUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': b2AuthToken,
+                  'X-Bz-File-Name': b2FileName,
+                  'Content-Type': 'b2/x-auto',
+                  'X-Bz-Content-Sha1': 'do_not_verify',
+                },
+                body: chunkBlob,
+              });
+            } catch (err) {
+              console.warn('[Upload] Direct B2 fetch error, using high-speed API fallback:', err);
+              res = await fetch('/api/upload/chunk', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/octet-stream',
+                  'x-video-id': videoId,
+                  'x-chunk-index': chunkIndex.toString(),
+                },
+                body: chunkBlob,
+              });
+            }
+          } else {
+            res = await fetch('/api/upload/chunk', {
               method: 'POST',
               headers: {
-                'Authorization': b2AuthToken,
-                'X-Bz-File-Name': b2FileName,
-                'Content-Type': 'b2/x-auto',
-                'X-Bz-Content-Sha1': 'do_not_verify',
+                'Content-Type': 'application/octet-stream',
+                'x-video-id': videoId,
+                'x-chunk-index': chunkIndex.toString(),
               },
               body: chunkBlob,
             });
-          } else {
-            const formData = new FormData();
-            formData.append('videoId', videoId);
-            formData.append('chunkIndex', chunkIndex.toString());
-            formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`);
-            res = await fetch('/api/upload/chunk', { method: 'POST', body: formData });
           }
 
           if (res.ok) {
