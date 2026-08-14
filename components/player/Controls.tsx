@@ -3,7 +3,7 @@
 import { RefObject, useState, useCallback } from 'react';
 import ProgressBar from './ProgressBar';
 import VolumeControl from './VolumeControl';
-import type { QualityLevel, AudioTrack } from './VideoPlayer';
+import type { QualityLevel, AudioTrack, SubtitleTrack } from './VideoPlayer';
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ export function calculateBufferedPercent(video: HTMLVideoElement): number {
 
 // ─── Settings panel types ─────────────────────────────────────────────────────
 
-type SettingsView = 'main' | 'quality' | 'speed' | 'audio';
+type SettingsView = 'main' | 'quality' | 'speed' | 'audio' | 'subtitles';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,8 @@ interface ControlsProps {
   availableQualities: QualityLevel[];
   audioTracks: AudioTrack[];
   currentAudioTrack: number;
+  subtitleTracks: SubtitleTrack[];
+  currentSubtitleTrack: number;
   playbackSpeed: number;
   speedOptions: number[];
   onPlayPause: () => Promise<void> | void;
@@ -53,8 +55,10 @@ interface ControlsProps {
   onSeek: (percent: number) => void;
   onFullscreen: () => Promise<void> | void;
   onRotateLandscape: () => Promise<void> | void;
+  onToggleCC: () => void;
   onSelectQuality: (index: number | 'auto') => void;
   onAudioTrackChange: (index: number) => void;
+  onSubtitleTrackChange: (index: number) => void;
   onSpeedChange: (speed: number) => void;
 }
 
@@ -67,10 +71,13 @@ function SettingsPanel({
   availableQualities,
   audioTracks,
   currentAudioTrack,
+  subtitleTracks,
+  currentSubtitleTrack,
   playbackSpeed,
   speedOptions,
   onSelectQuality,
   onAudioTrackChange,
+  onSubtitleTrackChange,
   onSpeedChange,
   onClose,
 }: {
@@ -80,19 +87,23 @@ function SettingsPanel({
   availableQualities: QualityLevel[];
   audioTracks: AudioTrack[];
   currentAudioTrack: number;
+  subtitleTracks: SubtitleTrack[];
+  currentSubtitleTrack: number;
   playbackSpeed: number;
   speedOptions: number[];
   onSelectQuality: (index: number | 'auto') => void;
   onAudioTrackChange: (index: number) => void;
+  onSubtitleTrackChange: (index: number) => void;
   onSpeedChange: (speed: number) => void;
   onClose: () => void;
 }) {
   const sortedQualities = [...availableQualities].sort((a, b) => b.height - a.height);
   const activeAudioLabel = audioTracks[currentAudioTrack]?.label ?? 'Default Audio';
+  const activeSubLabel   = currentSubtitleTrack === -1 ? 'Off' : (subtitleTracks[currentSubtitleTrack]?.label ?? 'On');
 
   return (
     <div
-      className="absolute bottom-16 right-3 w-60 rounded-2xl overflow-hidden shadow-2xl border border-white/10 z-30 animate-fade-in"
+      className="absolute bottom-16 right-3 w-64 rounded-2xl overflow-hidden shadow-2xl border border-white/10 z-30 animate-fade-in"
       style={{ background: 'rgba(18,18,22,0.97)', backdropFilter: 'blur(24px)' }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -134,6 +145,26 @@ function SettingsPanel({
               </div>
               <div className="flex items-center gap-2 text-gray-400 text-xs max-w-[100px] truncate">
                 <span className="truncate">{activeAudioLabel}</span>
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 shrink-0"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+              </div>
+            </button>
+          </li>
+
+          {/* Subtitles & Captions */}
+          <li>
+            <button
+              id="settings-subtitles"
+              onClick={() => setView('subtitles')}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm text-white hover:bg-white/10 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                  <path d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1z"/>
+                </svg>
+                <span>Subtitles / CC</span>
+              </div>
+              <div className="flex items-center gap-2 text-gray-400 text-xs max-w-[100px] truncate">
+                <span className="truncate">{activeSubLabel}</span>
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 shrink-0"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
               </div>
             </button>
@@ -214,6 +245,34 @@ function SettingsPanel({
         </>
       )}
 
+      {/* Subtitles & Captions sub-menu */}
+      {view === 'subtitles' && (
+        <>
+          <button onClick={() => setView('main')} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-400 hover:text-white border-b border-white/10 transition-colors">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+            Subtitles / CC
+          </button>
+          <ul className="py-2 max-h-60 overflow-y-auto">
+            <li>
+              <button id="sub-off" onClick={() => { onSubtitleTrackChange(-1); onClose(); }}
+                className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${currentSubtitleTrack === -1 ? 'text-red-500 font-semibold' : 'text-white hover:bg-white/10'}`}>
+                <span>Off</span>
+                {currentSubtitleTrack === -1 && <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>}
+              </button>
+            </li>
+            {subtitleTracks.map((t) => (
+              <li key={t.index}>
+                <button id={`sub-${t.index}`} onClick={() => { onSubtitleTrackChange(t.index); onClose(); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${currentSubtitleTrack === t.index ? 'text-red-500 font-semibold' : 'text-white hover:bg-white/10'}`}>
+                  <span>{t.label}</span>
+                  {currentSubtitleTrack === t.index && <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       {/* Speed sub-menu */}
       {view === 'speed' && (
         <>
@@ -252,6 +311,8 @@ export default function Controls({
   availableQualities,
   audioTracks,
   currentAudioTrack,
+  subtitleTracks,
+  currentSubtitleTrack,
   playbackSpeed,
   speedOptions,
   onPlayPause,
@@ -260,8 +321,10 @@ export default function Controls({
   onSeek,
   onFullscreen,
   onRotateLandscape,
+  onToggleCC,
   onSelectQuality,
   onAudioTrackChange,
+  onSubtitleTrackChange,
   onSpeedChange,
 }: ControlsProps) {
   const [showSettings, setShowSettings] = useState(false);
@@ -287,6 +350,8 @@ export default function Controls({
     setSettingsView('main');
   }, []);
 
+  const isCCOn = currentSubtitleTrack !== -1;
+
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10" onClick={closeSettings}>
       {/* Big gradient — fades bottom to visible */}
@@ -307,10 +372,13 @@ export default function Controls({
           availableQualities={availableQualities}
           audioTracks={audioTracks}
           currentAudioTrack={currentAudioTrack}
+          subtitleTracks={subtitleTracks}
+          currentSubtitleTrack={currentSubtitleTrack}
           playbackSpeed={playbackSpeed}
           speedOptions={speedOptions}
           onSelectQuality={onSelectQuality}
           onAudioTrackChange={onAudioTrackChange}
+          onSubtitleTrackChange={onSubtitleTrackChange}
           onSpeedChange={onSpeedChange}
           onClose={closeSettings}
         />
@@ -389,6 +457,26 @@ export default function Controls({
 
           {/* Spacer */}
           <div className="flex-1" />
+
+          {/* 1-Tap Closed Captions (CC) ON/OFF Button */}
+          <button
+            id="player-cc-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCC();
+            }}
+            aria-label={isCCOn ? 'Turn captions off' : 'Turn captions on'}
+            title={isCCOn ? 'Captions ON' : 'Captions OFF'}
+            className={`w-10 h-10 flex items-center justify-center font-bold text-xs rounded-lg transition-all ${
+              isCCOn
+                ? 'text-white bg-red-600 shadow-glow-red border border-red-500 scale-105'
+                : 'text-white/70 hover:text-white hover:scale-110 active:scale-90'
+            }`}
+          >
+            <span className="border-2 border-current px-1 py-0.5 rounded text-[10px] leading-none tracking-tighter">
+              CC
+            </span>
+          </button>
 
           {/* 1-Tap Audio & Language Button */}
           <button

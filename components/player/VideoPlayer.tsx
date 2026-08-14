@@ -12,8 +12,9 @@ interface VideoPlayerProps {
   dataSaverMode?: boolean;
 }
 
-export interface QualityLevel { index: number; label: string; height: number; }
-export interface AudioTrack   { index: number; label: string; lang: string; }
+export interface QualityLevel  { index: number; label: string; height: number; }
+export interface AudioTrack    { index: number; label: string; lang: string; }
+export interface SubtitleTrack { index: number; label: string; lang: string; }
 
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -42,6 +43,13 @@ function formatAudioLabel(track: { name?: string; lang?: string }, index: number
   const langName = LANG_MAP[langKey] ?? track.name ?? track.lang;
   if (langName) return `${langName} (Audio ${index + 1})`;
   return `Audio Track ${index + 1}`;
+}
+
+function formatSubLabel(track: { name?: string; lang?: string }, index: number): string {
+  const langKey = track.lang?.toLowerCase() ?? '';
+  const langName = LANG_MAP[langKey] ?? track.name ?? track.lang;
+  if (langName) return `${langName} Subtitles`;
+  return `Subtitle Track ${index + 1}`;
 }
 
 export default function VideoPlayer({
@@ -77,9 +85,11 @@ export default function VideoPlayer({
   const [currentQuality,     setCurrentQuality]     = useState<string>('Auto');
   const qualityLockedRef = useRef(false);
 
-  // Audio tracks
-  const [audioTracks,        setAudioTracks]        = useState<AudioTrack[]>([]);
-  const [currentAudioTrack,  setCurrentAudioTrack]  = useState(0);
+  // Audio tracks & Subtitle tracks
+  const [audioTracks,          setAudioTracks]          = useState<AudioTrack[]>([]);
+  const [currentAudioTrack,    setCurrentAudioTrack]    = useState(0);
+  const [subtitleTracks,       setSubtitleTracks]       = useState<SubtitleTrack[]>([]);
+  const [currentSubtitleTrack, setCurrentSubtitleTrack] = useState<number>(-1); // -1 = OFF
 
   // Playback speed
   const [playbackSpeed,      setPlaybackSpeed]      = useState(1);
@@ -170,6 +180,20 @@ export default function VideoPlayer({
       if (hls.audioTrack >= 0) {
         setCurrentAudioTrack(hls.audioTrack);
       }
+    });
+
+    // Subtitles / Closed Captions
+    hls.on(Events.SUBTITLE_TRACKS_UPDATED, () => {
+      const tracks: SubtitleTrack[] = hls.subtitleTracks.map((t, i) => ({
+        index: i,
+        label: formatSubLabel(t, i),
+        lang: t.lang || '',
+      }));
+      setSubtitleTracks(tracks);
+    });
+
+    hls.on(Events.SUBTITLE_TRACK_SWITCH, () => {
+      setCurrentSubtitleTrack(hls.subtitleTrack);
     });
 
     // Buffering
@@ -301,6 +325,7 @@ export default function VideoPlayer({
         case 'ArrowDown':   e.preventDefault(); video.volume = Math.max(video.volume - 0.1, 0); break;
         case 'm':           video.muted = !video.muted; break;
         case 'f':           await handleFullscreen(); break;
+        case 'c':           handleToggleCC(); break;
       }
       showControlsNow();
     };
@@ -349,6 +374,28 @@ export default function VideoPlayer({
     hls.audioTrack = index;
     setCurrentAudioTrack(index);
   }, []);
+
+  const handleSubtitleTrackChange = useCallback((index: number) => {
+    const hls = hlsRef.current;
+    const video = videoRef.current;
+    if (!hls) return;
+    hls.subtitleTrack = index; // -1 = OFF, 0+ = track index
+    setCurrentSubtitleTrack(index);
+
+    if (video && video.textTracks) {
+      for (let i = 0; i < video.textTracks.length; i++) {
+        video.textTracks[i].mode = i === index ? 'showing' : 'disabled';
+      }
+    }
+  }, []);
+
+  const handleToggleCC = useCallback(() => {
+    if (currentSubtitleTrack === -1) {
+      handleSubtitleTrackChange(0); // Turn ON first track
+    } else {
+      handleSubtitleTrackChange(-1); // Turn OFF
+    }
+  }, [currentSubtitleTrack, handleSubtitleTrackChange]);
 
   const handleSpeedChange = useCallback((speed: number) => {
     const v = videoRef.current;
@@ -419,6 +466,8 @@ export default function VideoPlayer({
             availableQualities={availableQualities}
             audioTracks={audioTracks}
             currentAudioTrack={currentAudioTrack}
+            subtitleTracks={subtitleTracks}
+            currentSubtitleTrack={currentSubtitleTrack}
             playbackSpeed={playbackSpeed}
             speedOptions={SPEED_OPTIONS}
             onPlayPause={handlePlayPause}
@@ -427,8 +476,10 @@ export default function VideoPlayer({
             onSeek={handleSeek}
             onFullscreen={handleFullscreen}
             onRotateLandscape={handleRotateLandscape}
+            onToggleCC={handleToggleCC}
             onSelectQuality={handleSelectQuality}
             onAudioTrackChange={handleAudioTrackChange}
+            onSubtitleTrackChange={handleSubtitleTrackChange}
             onSpeedChange={handleSpeedChange}
           />
         </div>
