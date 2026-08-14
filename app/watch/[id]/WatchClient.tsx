@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import VideoPlayer from '@/components/player/VideoPlayer';
 import type { VideoResponse, Video } from '@/lib/types';
@@ -36,6 +36,10 @@ export default function WatchClient({ video, allVideos = [] }: WatchClientProps)
   // Filter other videos (excluding current) for episode/parts section
   const otherVideos = allVideos.filter(v => v.id !== video.id && v.status === 'ready');
 
+  const handleQualityChange = useCallback((level: { label: string; height: number }) => {
+    setCurrentQuality(level.label);
+  }, []);
+
   return (
     <div className="max-w-6xl mx-auto px-0 md:px-6 py-0 md:py-6 space-y-6">
       
@@ -45,7 +49,7 @@ export default function WatchClient({ video, allVideos = [] }: WatchClientProps)
           masterManifestUrl={video.masterManifestUrl}
           poster={video.thumbnailUrl}
           dataSaverMode={dataSaverMode}
-          onQualityChange={(level) => setCurrentQuality(level.label)}
+          onQualityChange={handleQualityChange}
         />
       </div>
 

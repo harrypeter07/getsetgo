@@ -28,6 +28,12 @@ export default function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const hideTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Keep callback ref to prevent HLS destruction on parent re-renders
+  const onQualityChangeRef = useRef(onQualityChange);
+  useEffect(() => {
+    onQualityChangeRef.current = onQualityChange;
+  }, [onQualityChange]);
+
   // Player state
   const [isBuffering,        setIsBuffering]        = useState(true);
   const [error,              setError]              = useState<string | null>(null);
@@ -84,12 +90,9 @@ export default function VideoPlayer({
     }
 
     const hlsConfig: Partial<HlsConfig> = {
-      // ── Start at LOWEST quality, let ABR upgrade (YouTube behaviour) ──
-      startLevel: 0,
-      abrEwmaDefaultEstimate: 200_000,   // conservative 200 kbps seed → forces low start
-      abrBandWidthFactor: 0.95,
-      abrBandWidthUpFactor: 0.7,
-      // ─────────────────────────────────────────────────────────────────
+      // Automatic ABR mode with smooth quality transition
+      startLevel: -1, // -1 = Automatic ABR estimate
+      abrEwmaDefaultEstimate: 1_000_000,
       maxBufferLength: 30,
       maxMaxBufferLength: 60,
       capLevelToPlayerSize: true,
@@ -104,22 +107,22 @@ export default function VideoPlayer({
     hls.attachMedia(video);
 
     // Quality levels available
-    hls.on(Events.MANIFEST_PARSED, (_, data) => {
+    hls.on(Events.MANIFEST_PARSED, () => {
       const levels = hls.levels;
       setAvailableQualities(
         levels.map((l, i) => ({ index: i, label: `${l.height}p`, height: l.height }))
       );
-      if (dataSaverMode) hls.autoLevelCapping = 0; // cap to lowest if data saver
+      if (dataSaverMode) hls.autoLevelCapping = 0;
       video.play().catch(() => {});
     });
 
-    // Current quality changed by ABR
+    // Current quality changed by ABR (smooth transition without restarting video)
     hls.on(Events.LEVEL_SWITCHED, (_, data: LevelSwitchedData) => {
       const level = hls.levels[data.level];
       if (level && !qualityLockedRef.current) {
         const label = `${level.height}p`;
         setCurrentQuality(label);
-        onQualityChange?.({ label, height: level.height });
+        onQualityChangeRef.current?.({ label, height: level.height });
       }
     });
 
@@ -158,8 +161,11 @@ export default function VideoPlayer({
       }
     });
 
-    return () => { hls.destroy(); hlsRef.current = null; };
-  }, [masterManifestUrl, dataSaverMode, onQualityChange]);
+    return () => {
+      hls.destroy();
+      hlsRef.current = null;
+    };
+  }, [masterManifestUrl]); // Depend ONLY on masterManifestUrl!
 
   // Data saver mode change
   useEffect(() => {
@@ -213,7 +219,7 @@ export default function VideoPlayer({
       const video = videoRef.current;
       if (!video) return;
       switch (e.key) {
-        case ' ': case 'k': e.preventDefault(); video.paused ? video.play() : video.pause(); break;
+        case ' ': case 'k': e.preventDefault(); if (video.paused) video.play(); else video.pause(); break;
         case 'ArrowRight':  e.preventDefault(); video.currentTime = Math.min(video.currentTime + 10, video.duration); break;
         case 'ArrowLeft':   e.preventDefault(); video.currentTime = Math.max(video.currentTime - 10, 0); break;
         case 'ArrowUp':     e.preventDefault(); video.volume = Math.min(video.volume + 0.1, 1); break;
