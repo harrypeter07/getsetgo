@@ -7,9 +7,6 @@ interface UploadFormProps {
   onJobCreated: (jobId: string) => void;
 }
 
-const DEFAULT_CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB per chunk (fits Vercel 4.5MB limit)
-const CONCURRENCY = 8; // 8 parallel connections for maximum 15MB/s - 45MB/s upload speed
-
 export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
@@ -17,6 +14,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [isUltraSpeed, setIsUltraSpeed] = useState<boolean>(true);
   const [savedChunkCount, setSavedChunkCount] = useState<number>(0);
 
   // Upload progress states
@@ -107,9 +105,11 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     setProgressPercent(0);
     cancelUploadRef.current = false;
 
-    const chunkSize = DEFAULT_CHUNK_SIZE;
+    // Ultra speed uses 16x parallel workers and 2MB chunks for maximum pipelined speed
+    const concurrency = isUltraSpeed ? 16 : 4;
+    const chunkSize   = isUltraSpeed ? 2 * 1024 * 1024 : 3 * 1024 * 1024;
     const totalChunks = Math.ceil(selectedFile.size / chunkSize);
-    const resumeKey = `shimpli_upload_${selectedFile.name}_${selectedFile.size}`;
+    const resumeKey   = `shimpli_upload_${selectedFile.name}_${selectedFile.size}`;
 
     // Load completed chunk indices from localStorage for resumption
     let completedChunks = new Set<number>();
@@ -122,7 +122,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     } catch {}
 
     // 1. Initialize upload session on server
-    setStatusMessage('Initializing High-Speed Parallel Session...');
+    setStatusMessage(`Initializing ${concurrency}x Parallel Session...`);
     const initRes = await fetch('/api/upload/init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -151,7 +151,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       }
     }
 
-    setStatusMessage('⚡ 8x Rapid Parallel Workers - Uploading...');
+    setStatusMessage(`⚡ ${concurrency}x ${isUltraSpeed ? '🔥 ULTRA SPEED' : 'Rapid'} Workers Uploading...`);
 
     // Helper worker to upload individual chunk using high-speed ArrayBuffer
     const uploadSingleChunk = async (chunkIndex: number): Promise<void> => {
@@ -205,14 +205,14 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
         } catch (e) {
           attempts--;
           if (attempts === 0) throw e;
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 400));
         }
       }
     };
 
-    // 3. Run worker pool with 8 concurrent connection threads
+    // 3. Run worker pool with 16 (or 4) concurrent connection threads
     let index = 0;
-    const workerPool = Array(CONCURRENCY).fill(0).map(async () => {
+    const workerPool = Array(concurrency).fill(0).map(async () => {
       while (index < chunkIndicesToUpload.length && !cancelUploadRef.current) {
         const chunkIndex = chunkIndicesToUpload[index++];
         await uploadSingleChunk(chunkIndex);
@@ -330,9 +330,9 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             </div>
             <div>
               <p className="text-white font-bold text-base">Select or drop a video file</p>
-              <p className="text-text-secondary text-xs mt-1">8x Parallel Streams • 15 MB/s - 45 MB/s Rapid Engine</p>
+              <p className="text-text-secondary text-xs mt-1">16x Turbo Streams • 5 MB/s - 25 MB/s Ultra Engine</p>
             </div>
-            <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (Pause / Resume / Cancel support)</span>
+            <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (Ultra Speed Mode Enabled)</span>
           </>
         )}
 
@@ -368,6 +368,38 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             transition-all disabled:opacity-50
           "
         />
+      </div>
+
+      {/* Ultra Speed Mode Toggle Banner */}
+      <div
+        onClick={() => !isUploading && setIsUltraSpeed(v => !v)}
+        className={`
+          flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all select-none
+          ${isUltraSpeed
+            ? 'bg-gradient-to-r from-red-950/60 via-surface-alt to-emerald-950/40 border-accent/50 shadow-glow-red'
+            : 'bg-surface-alt border-white/10 opacity-70 hover:opacity-100'
+          }
+        `}
+      >
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${isUltraSpeed ? 'bg-accent/20 text-accent border border-accent/40 shadow-glow-red animate-pulse' : 'bg-white/5 text-white/40'}`}>
+            ⚡
+          </div>
+          <div>
+            <h4 className="text-white font-bold text-sm flex items-center gap-2">
+              ULTRA SPEED MODE
+              {isUltraSpeed && <span className="bg-emerald-500/20 text-emerald-400 text-[10px] uppercase px-2 py-0.5 rounded-full font-mono border border-emerald-500/30">16x Turbo</span>}
+            </h4>
+            <p className="text-text-secondary text-xs">
+              {isUltraSpeed ? '16 parallel stream workers for max 5MB/s - 25MB/s bandwidth' : 'Normal mode (4 parallel workers)'}
+            </p>
+          </div>
+        </div>
+
+        {/* Toggle Switch */}
+        <div className={`w-12 h-6 rounded-full p-1 transition-colors ${isUltraSpeed ? 'bg-accent' : 'bg-white/20'}`}>
+          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isUltraSpeed ? 'translate-x-6' : 'translate-x-0'}`} />
+        </div>
       </div>
 
       {/* Progress & Control Banner */}
@@ -469,14 +501,15 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
         id="upload-submit-btn"
         type="submit"
         disabled={isUploading || !file}
-        className="
-          w-full min-h-[50px] px-6 py-3.5
-          bg-gradient-to-r from-accent to-[#B81D24] hover:from-accent-hover hover:to-accent
+        className={`
+          w-full min-h-[50px] px-6 py-3.5 font-bold text-sm md:text-base rounded-2xl shadow-glow-red
+          transition-all active:scale-[0.98] flex items-center justify-center gap-2 border border-white/10
+          ${isUltraSpeed
+            ? 'bg-gradient-to-r from-red-600 via-accent to-emerald-600 hover:from-accent hover:to-emerald-500 text-white'
+            : 'bg-gradient-to-r from-accent to-[#B81D24] text-white'
+          }
           disabled:bg-surface-alt disabled:text-text-secondary disabled:cursor-not-allowed disabled:shadow-none
-          text-white font-bold text-sm md:text-base rounded-2xl shadow-glow-red
-          transition-all active:scale-[0.98]
-          flex items-center justify-center gap-2 border border-white/10
-        "
+        `}
       >
         {isUploading ? (
           <>
@@ -484,9 +517,11 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            Rapid Upload In Progress… ({progressPercent}%)
+            {isUltraSpeed ? '⚡ Ultra Speed Upload…' : 'Rapid Upload In Progress…'} ({progressPercent}%)
           </>
-        ) : 'Upload & Cloud Transcode'}
+        ) : (
+          isUltraSpeed ? '⚡ Upload in ULTRA SPEED (16x Turbo)' : 'Upload & Cloud Transcode'
+        )}
       </button>
     </form>
   );
