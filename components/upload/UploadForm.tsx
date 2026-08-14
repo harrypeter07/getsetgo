@@ -295,23 +295,50 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
       {/* Progress & Speed Bar */}
       {isUploading && (
-        <div className="flex flex-col gap-2.5 bg-surface-alt/70 border border-white/10 rounded-2xl p-4 animate-fade-in">
+        <div className="flex flex-col gap-3.5 bg-surface-alt/90 border border-accent/30 rounded-2xl p-5 shadow-2xl animate-fade-in">
           <div className="flex items-center justify-between text-xs text-white">
-            <span className="font-semibold">{statusMessage}</span>
-            <span className="font-mono text-accent font-bold">{progressPercent}%</span>
+            <span className="font-bold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+              {statusMessage}
+            </span>
+            <span className="font-mono text-accent font-extrabold text-sm">{progressPercent}%</span>
           </div>
 
-          {/* Bar */}
-          <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+          {/* Glowing Animated Progress Bar */}
+          <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden p-0.5 border border-white/5 relative">
             <div
-              className="bg-gradient-to-r from-accent to-red-500 h-full rounded-full transition-all duration-300 shadow-glow-red"
+              className="bg-gradient-to-r from-red-600 via-accent to-red-400 h-full rounded-full transition-all duration-300 shadow-glow-red"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
 
-          <div className="flex items-center justify-between text-xs text-text-secondary font-mono">
-            <span>🚀 Speed: <strong className="text-white">{uploadSpeedMbps} MB/s</strong></span>
-            <span>⏳ ETA: <strong className="text-white">{etaSeconds}s</strong></span>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs pt-1 border-t border-white/10">
+            {/* Speed */}
+            <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center">
+              <span className="text-white/50 text-[10px] uppercase font-bold tracking-wider">Rapid Speed</span>
+              <span className="text-emerald-400 font-bold font-mono text-xs mt-0.5">🚀 {uploadSpeedMbps} MB/s</span>
+            </div>
+
+            {/* Transferred MB */}
+            <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center">
+              <span className="text-white/50 text-[10px] uppercase font-bold tracking-wider">Transferred</span>
+              <span className="text-white font-bold font-mono text-xs mt-0.5">
+                {file ? `${((progressPercent / 100) * (file.size / (1024 * 1024))).toFixed(0)} / ${(file.size / (1024 * 1024)).toFixed(0)} MB` : '0 MB'}
+              </span>
+            </div>
+
+            {/* ETA */}
+            <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center">
+              <span className="text-white/50 text-[10px] uppercase font-bold tracking-wider">Est. Time</span>
+              <span className="text-accent font-bold font-mono text-xs mt-0.5">
+                ⏳ {etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-white/50 pt-1 font-mono">
+            <span>⚡ 4x Parallel Workers</span>
+            <span>0% Local CPU Load (Cloud Processing)</span>
           </div>
         </div>
       )}
