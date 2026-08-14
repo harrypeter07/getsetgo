@@ -70,16 +70,21 @@ function scanVideos(dir) {
 let localVideos = scanVideos(targetFolder);
 console.log(`✅ Indexed ${localVideos.length} video(s) on your laptop!\n`);
 
-// Register local videos with Supabase DB so website displays them
+// Maintain tracked set of registered titles to eliminate duplicate logs
+const syncedTitles = new Set();
+
 async function syncToSupabase() {
   if (!supabase) {
-    console.warn('⚠️ Supabase credentials missing in .env.local. Running in local standalone mode.');
     return;
   }
 
   localVideos = scanVideos(targetFolder);
 
   for (const item of localVideos) {
+    if (syncedTitles.has(item.title)) {
+      continue;
+    }
+
     const localStreamUrl = `http://localhost:${PORT}/stream?file=${encodeURIComponent(item.filePath)}`;
     try {
       const { data: existing } = await supabase.from('videos').select('id').eq('title', item.title).limit(1);
@@ -90,7 +95,10 @@ async function syncToSupabase() {
           master_manifest_url: localStreamUrl,
           available_qualities: ['1080p (Laptop Direct ⚡)'],
         });
+        syncedTitles.add(item.title);
         console.log(`✨ Registered on Website: "${item.title}"`);
+      } else {
+        syncedTitles.add(item.title);
       }
     } catch (err) {
       console.warn(`Could not sync "${item.title}" to Supabase:`, err.message);
@@ -100,12 +108,16 @@ async function syncToSupabase() {
 
 syncToSupabase();
 
-// Real-Time Folder Watcher for instant auto-adding new files
+// Real-Time Folder Watcher with 1.5s Debounce Timer
+let watchTimer = null;
 try {
   fs.watch(targetFolder, { recursive: true }, (eventType, filename) => {
     if (filename && SUPPORTED_EXTS.some(ext => filename.toLowerCase().endsWith(ext))) {
-      console.log(`\n🔔 New video detected in folder: "${filename}"! Syncing to website...`);
-      setTimeout(syncToSupabase, 1000);
+      if (watchTimer) clearTimeout(watchTimer);
+      watchTimer = setTimeout(() => {
+        console.log(`\n🔔 Syncing new/updated video files from "${targetFolder}"...`);
+        syncToSupabase();
+      }, 1500);
     }
   });
   console.log(`👀 Watching "${targetFolder}" for new video files in real-time...`);
