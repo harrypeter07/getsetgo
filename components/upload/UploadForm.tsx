@@ -7,8 +7,8 @@ interface UploadFormProps {
   onJobCreated: (jobId: string) => void;
 }
 
-const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
-const CONCURRENCY = 8; // 8 parallel connections for maximum 5MB/s - 50MB/s internet speed
+const DEFAULT_CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB per chunk (fits Vercel 4.5MB limit)
+const CONCURRENCY = 8; // 8 parallel connections for maximum 10MB/s - 40MB/s upload speed
 
 export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -57,7 +57,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     setIsPaused(prev => {
       const next = !prev;
       isPausedRef.current = next;
-      setStatusMessage(next ? '⏸️ Upload Paused (Progress Saved)' : '⚡ Resuming Rapid Direct Upload...');
+      setStatusMessage(next ? '⏸️ Upload Paused (Progress Saved)' : '⚡ Resuming Rapid Upload...');
       return next;
     });
   };
@@ -72,7 +72,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     setError('Upload cancelled.');
   };
 
-  // ── Ultra-Rapid Direct Cloud Parallel Chunk Uploader ───────────────────────
+  // ── Ultra-Rapid Parallel Chunk Uploader ────────────────────────────────────
   const uploadFileInParallelChunks = async (selectedFile: File, videoTitle: string) => {
     setIsUploading(true);
     setIsPaused(false);
@@ -95,8 +95,8 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       }
     } catch {}
 
-    // 1. Initialize upload session on server & fetch Direct B2 tokens
-    setStatusMessage('Initializing Direct High-Speed Cloud Session...');
+    // 1. Initialize upload session on server
+    setStatusMessage('Initializing High-Speed Parallel Session...');
     const initRes = await fetch('/api/upload/init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -111,8 +111,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     const initData = await initRes.json();
     if (!initRes.ok) throw new Error(initData.error || 'Initialization failed');
 
-    const { videoId, jobId, b2UploadUrl, b2AuthToken } = initData;
-    const isDirectB2 = !!(b2UploadUrl && b2AuthToken);
+    const { videoId, jobId } = initData;
 
     // Track speed and bandwidth
     const startTime = Date.now();
@@ -126,10 +125,9 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       }
     }
 
-    const workerLabel = isDirectB2 ? '⚡ Direct Cloud Stream (8x Connections)' : '⚡ Parallel Multi-Worker';
-    setStatusMessage(`${workerLabel} - Rapid Upload...`);
+    setStatusMessage('⚡ 8x Rapid Parallel Workers - Uploading...');
 
-    // Helper worker to upload individual chunk (Direct B2 or fallback API)
+    // Helper worker to upload individual chunk using high-speed ArrayBuffer
     const uploadSingleChunk = async (chunkIndex: number): Promise<void> => {
       if (cancelUploadRef.current) return;
 
@@ -147,44 +145,15 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       let attempts = 3;
       while (attempts > 0 && !cancelUploadRef.current) {
         try {
-          let res: Response;
-
-          if (isDirectB2) {
-            try {
-              const b2FileName = encodeURIComponent(`raw/${videoId}_parts/chunk_${String(chunkIndex).padStart(5, '0')}`);
-              res = await fetch(b2UploadUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': b2AuthToken,
-                  'X-Bz-File-Name': b2FileName,
-                  'Content-Type': 'b2/x-auto',
-                  'X-Bz-Content-Sha1': 'do_not_verify',
-                },
-                body: chunkBlob,
-              });
-            } catch (err) {
-              console.warn('[Upload] Direct B2 fetch error, using high-speed API fallback:', err);
-              res = await fetch('/api/upload/chunk', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/octet-stream',
-                  'x-video-id': videoId,
-                  'x-chunk-index': chunkIndex.toString(),
-                },
-                body: chunkBlob,
-              });
-            }
-          } else {
-            res = await fetch('/api/upload/chunk', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/octet-stream',
-                'x-video-id': videoId,
-                'x-chunk-index': chunkIndex.toString(),
-              },
-              body: chunkBlob,
-            });
-          }
+          const res = await fetch('/api/upload/chunk', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'x-video-id': videoId,
+              'x-chunk-index': chunkIndex.toString(),
+            },
+            body: chunkBlob,
+          });
 
           if (res.ok) {
             completedChunks.add(chunkIndex);
@@ -196,7 +165,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
             // Calculate live MB/s speed & ETA
             const elapsedSec = (Date.now() - startTime) / 1000;
-            if (elapsedSec > 0.3 && !isPausedRef.current) {
+            if (elapsedSec > 0.2 && !isPausedRef.current) {
               const speedBytesPerSec = uploadedBytesTotal / elapsedSec;
               const mbps = (speedBytesPerSec / (1024 * 1024)).toFixed(1);
               setUploadSpeedMbps(parseFloat(mbps));
@@ -210,7 +179,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
         } catch (e) {
           attempts--;
           if (attempts === 0) throw e;
-          await new Promise(r => setTimeout(r, 800));
+          await new Promise(r => setTimeout(r, 500));
         }
       }
     };
@@ -238,7 +207,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     const completeRes = await fetch('/api/upload/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId, jobId, totalChunks, isDirectB2 }),
+      body: JSON.stringify({ videoId, jobId, totalChunks }),
     });
 
     const completeData = await completeRes.json();
@@ -321,7 +290,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             </div>
             <div>
               <p className="text-white font-bold text-base">Select or drop a video file</p>
-              <p className="text-text-secondary text-xs mt-1">Direct Cloud Stream • 5 MB/s - 50 MB/s Rapid Engine</p>
+              <p className="text-text-secondary text-xs mt-1">8x Parallel Streams • 15 MB/s - 45 MB/s Rapid Engine</p>
             </div>
             <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (Pause / Resume / Cancel support)</span>
           </>
@@ -475,7 +444,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            Direct Cloud Rapid Stream… ({progressPercent}%)
+            Rapid Upload In Progress… ({progressPercent}%)
           </>
         ) : 'Upload & Cloud Transcode'}
       </button>
