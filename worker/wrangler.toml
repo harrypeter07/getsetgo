@@ -1,0 +1,7 @@
+name = "videostream-proxy"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+B2_BUCKET_NAME = "getitfast"
+B2_ENDPOINT = "s3.us-east-005.backblazeb2.com"

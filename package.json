@@ -1,0 +1,37 @@
+{
+  "name": "netchinga",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:transcode": "node tests/transcode.test.js",
+    "transcode": "node scripts/transcode.js",
+    "upload-to-b2": "node scripts/upload-to-b2.js",
+    "upload-to-r2": "node scripts/upload-to-r2.js",
+    "pipeline": "node scripts/pipeline.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1110.0",
+    "@supabase/supabase-js": "^2.112.3",
+    "dotenv": "^17.4.2",
+    "hls.js": "^1.7.0",
+    "next": "14.2.35",
+    "pg": "^8.23.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
