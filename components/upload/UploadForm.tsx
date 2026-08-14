@@ -75,6 +75,8 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
   const handleDragLeave = () => setIsDragging(false);
 
+  const currentVideoIdRef = useRef<string | null>(null);
+
   // ── Pause & Cancel Controls ────────────────────────────────────────────────
   const handleTogglePause = () => {
     setIsPaused(prev => {
@@ -85,7 +87,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     });
   };
 
-  const handleCancelUpload = () => {
+  const handleCancelUpload = async () => {
     cancelUploadRef.current = true;
     isPausedRef.current = false;
     setIsPaused(false);
@@ -93,7 +95,22 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     setProgressPercent(0);
     setStatusMessage('');
     clearSavedProgress();
-    setError('Upload cancelled.');
+
+    const videoIdToCancel = currentVideoIdRef.current;
+    if (videoIdToCancel) {
+      try {
+        await fetch('/api/upload/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: videoIdToCancel }),
+        });
+        console.log('[Upload] Storage cleaned up for cancelled upload:', videoIdToCancel);
+      } catch (err) {
+        console.warn('[Upload] Storage cleanup notice:', err);
+      }
+    }
+
+    setError('Upload cancelled & storage cleaned up.');
   };
 
   // ── Ultra-Rapid Parallel Chunk Uploader ────────────────────────────────────
@@ -138,6 +155,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     if (!initRes.ok) throw new Error(initData.error || 'Initialization failed');
 
     const { videoId, jobId } = initData;
+    currentVideoIdRef.current = videoId;
 
     // Track speed and bandwidth
     const startTime = Date.now();
