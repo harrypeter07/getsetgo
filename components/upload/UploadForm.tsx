@@ -133,10 +133,20 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     try {
       const saved = localStorage.getItem(resumeKey);
       if (saved) {
-        completedChunks = new Set(JSON.parse(saved));
-        console.log(`[Upload] Resuming upload! ${completedChunks.size}/${totalChunks} chunks already completed.`);
+        const arr: number[] = JSON.parse(saved);
+        // Invalidate if indices exceed totalChunks
+        const validArr = arr.filter(idx => typeof idx === 'number' && idx < totalChunks);
+        if (validArr.length !== arr.length || validArr.length === 0) {
+          localStorage.removeItem(resumeKey);
+          console.log('[Upload] Cleared outdated saved progress key:', resumeKey);
+        } else {
+          completedChunks = new Set(validArr);
+          console.log(`[Upload] Resuming upload! ${completedChunks.size}/${totalChunks} chunks already completed.`);
+        }
       }
-    } catch {}
+    } catch {
+      localStorage.removeItem(resumeKey);
+    }
 
     // 1. Initialize upload session on server
     setStatusMessage(`Initializing ${concurrency}x Parallel Session...`);
