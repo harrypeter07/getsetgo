@@ -11,7 +11,8 @@ interface ProgressBarProps {
 export default function ProgressBar({ progressPercent, bufferedPercent, onSeek }: ProgressBarProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [hoverPercent, setHoverPercent] = useState<number | null>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const [hoverPercent, setHoverPercent] = useState(0);
 
   const getPercent = useCallback((clientX: number): number => {
     const bar = barRef.current;
@@ -22,12 +23,11 @@ export default function ProgressBar({ progressPercent, bufferedPercent, onSeek }
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(true);
     onSeek(getPercent(e.clientX));
 
-    const onMouseMove = (ev: MouseEvent) => {
-      onSeek(getPercent(ev.clientX));
-    };
+    const onMouseMove = (ev: MouseEvent) => onSeek(getPercent(ev.clientX));
     const onMouseUp = () => {
       setIsDragging(false);
       document.removeEventListener('mousemove', onMouseMove);
@@ -38,54 +38,66 @@ export default function ProgressBar({ progressPercent, bufferedPercent, onSeek }
   }, [getPercent, onSeek]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation();
     const touch = e.touches[0];
     setIsDragging(true);
     onSeek(getPercent(touch.clientX));
 
-    const onTouchMove = (ev: TouchEvent) => {
-      ev.preventDefault();
-      onSeek(getPercent(ev.touches[0].clientX));
-    };
-    const onTouchEnd = () => {
-      setIsDragging(false);
-      document.removeEventListener('touchmove', onTouchMove);
-      document.removeEventListener('touchend', onTouchEnd);
-    };
+    const onTouchMove = (ev: TouchEvent) => { ev.preventDefault(); onSeek(getPercent(ev.touches[0].clientX)); };
+    const onTouchEnd  = () => { setIsDragging(false); document.removeEventListener('touchmove', onTouchMove); document.removeEventListener('touchend', onTouchEnd); };
     document.addEventListener('touchmove', onTouchMove, { passive: false });
     document.addEventListener('touchend', onTouchEnd);
   }, [getPercent, onSeek]);
 
+  const active = isDragging || isHovering;
+
   return (
-    // Touch-expandable: 4px resting, 12px hit area on interaction
+    /* Hit-area wrapper — 24px tall for easy touch, but only shows thin bar */
     <div
       ref={barRef}
       id="player-progress-bar"
-      className="relative w-full cursor-pointer group/progress"
-      style={{ height: isDragging || hoverPercent !== null ? '12px' : '4px', transition: 'height 0.15s ease' }}
+      className="relative w-full cursor-pointer flex items-center"
+      style={{ height: '24px', padding: '0 0' }}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => { setIsHovering(false); }}
+      onMouseMove={(e) => setHoverPercent(getPercent(e.clientX))}
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
-      onMouseMove={(e) => setHoverPercent(getPercent(e.clientX))}
-      onMouseLeave={() => setHoverPercent(null)}
     >
-      {/* Track background */}
-      <div className="absolute inset-0 bg-white/20 rounded-full overflow-hidden">
+      {/* Track */}
+      <div
+        className="absolute left-0 right-0 rounded-full overflow-visible transition-all duration-150"
+        style={{
+          height: active ? '5px' : '3px',
+          bottom: '10px',
+          background: 'rgba(255,255,255,0.2)',
+        }}
+      >
         {/* Buffered */}
         <div
-          className="absolute top-0 left-0 h-full bg-white/30 rounded-full transition-all duration-300"
-          style={{ width: `${bufferedPercent}%` }}
+          className="absolute top-0 left-0 h-full rounded-full"
+          style={{ width: `${bufferedPercent}%`, background: 'rgba(255,255,255,0.3)', transition: 'width 0.3s' }}
         />
-        {/* Progress */}
+        {/* Hover preview */}
+        {isHovering && (
+          <div
+            className="absolute top-0 left-0 h-full rounded-full"
+            style={{ width: `${hoverPercent}%`, background: 'rgba(255,255,255,0.15)' }}
+          />
+        )}
+        {/* Progress — Netflix red */}
         <div
-          className="absolute top-0 left-0 h-full bg-accent rounded-full"
-          style={{ width: `${progressPercent}%` }}
+          className="absolute top-0 left-0 h-full rounded-full"
+          style={{ width: `${progressPercent}%`, background: '#E50914' }}
         />
+        {/* Scrubber thumb — only on hover/drag */}
+        {active && (
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg"
+            style={{ left: `calc(${progressPercent}% - 8px)`, transition: 'left 0.05s' }}
+          />
+        )}
       </div>
-
-      {/* Scrubber thumb */}
-      <div
-        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md opacity-0 group-hover/progress:opacity-100 transition-opacity pointer-events-none"
-        style={{ left: `calc(${progressPercent}% - 6px)` }}
-      />
     </div>
   );
 }
