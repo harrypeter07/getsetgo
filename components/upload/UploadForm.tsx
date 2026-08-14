@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 
 interface UploadFormProps {
   onJobCreated: (jobId: string) => void;
 }
 
-const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB chunks (fits cleanly under Vercel's 4.5MB limit)
-const CONCURRENCY = 4; // 4 parallel upload workers for max speed
+const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
+const CONCURRENCY = 8; // 8 parallel connections for maximum 5MB/s - 50MB/s internet speed
 
 export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -50,14 +50,15 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
   const handleDragLeave = () => setIsDragging(false);
 
-  // ── Parallel Resumable Chunk Uploader ──────────────────────────────────────
+  // ── Ultra-Rapid Direct Cloud Parallel Chunk Uploader ───────────────────────
   const uploadFileInParallelChunks = async (selectedFile: File, videoTitle: string) => {
     setIsUploading(true);
     setError(null);
     setProgressPercent(0);
     cancelUploadRef.current = false;
 
-    const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
+    const chunkSize = DEFAULT_CHUNK_SIZE;
+    const totalChunks = Math.ceil(selectedFile.size / chunkSize);
     const resumeKey = `shimpli_upload_${selectedFile.name}_${selectedFile.size}`;
 
     // Load completed chunk indices from localStorage for resumption
@@ -70,8 +71,8 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       }
     } catch {}
 
-    // 1. Initialize upload session on server
-    setStatusMessage('Initializing upload session...');
+    // 1. Initialize upload session on server & fetch Direct B2 tokens
+    setStatusMessage('Initializing Direct High-Speed Cloud Session...');
     const initRes = await fetch('/api/upload/init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -86,11 +87,12 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     const initData = await initRes.json();
     if (!initRes.ok) throw new Error(initData.error || 'Initialization failed');
 
-    const { videoId, jobId } = initData;
+    const { videoId, jobId, b2UploadUrl, b2AuthToken } = initData;
+    const isDirectB2 = !!(b2UploadUrl && b2AuthToken);
 
     // Track speed and bandwidth
     const startTime = Date.now();
-    let uploadedBytesTotal = completedChunks.size * CHUNK_SIZE;
+    let uploadedBytesTotal = completedChunks.size * chunkSize;
 
     // 2. Build worker task queue for remaining chunks
     const chunkIndicesToUpload: number[] = [];
@@ -100,37 +102,55 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       }
     }
 
-    setStatusMessage(`Uploading in parallel (${CONCURRENCY} connections)...`);
+    const workerLabel = isDirectB2 ? '⚡ Direct Cloud Stream (8x Connections)' : '⚡ Parallel Multi-Worker';
+    setStatusMessage(`${workerLabel} - Rapid Upload...`);
 
-    // Helper worker to upload individual chunk
+    // Helper worker to upload individual chunk (Direct B2 or fallback API)
     const uploadSingleChunk = async (chunkIndex: number): Promise<void> => {
       if (cancelUploadRef.current) return;
 
-      const startByte = chunkIndex * CHUNK_SIZE;
-      const endByte   = Math.min(startByte + CHUNK_SIZE, selectedFile.size);
+      const startByte = chunkIndex * chunkSize;
+      const endByte   = Math.min(startByte + chunkSize, selectedFile.size);
       const chunkBlob = selectedFile.slice(startByte, endByte);
-
-      const formData = new FormData();
-      formData.append('videoId', videoId);
-      formData.append('chunkIndex', chunkIndex.toString());
-      formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`);
 
       let attempts = 3;
       while (attempts > 0) {
         try {
-          const res = await fetch('/api/upload/chunk', { method: 'POST', body: formData });
+          let res: Response;
+
+          if (isDirectB2) {
+            // Direct Browser -> Backblaze B2 Upload (Max Bandwidth Saturation)
+            const b2FileName = encodeURIComponent(`raw/${videoId}_parts/chunk_${String(chunkIndex).padStart(5, '0')}`);
+            res = await fetch(b2UploadUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': b2AuthToken,
+                'X-Bz-File-Name': b2FileName,
+                'Content-Type': 'b2/x-auto',
+                'X-Bz-Content-Sha1': 'do_not_verify',
+              },
+              body: chunkBlob,
+            });
+          } else {
+            // Fallback API chunk route
+            const formData = new FormData();
+            formData.append('videoId', videoId);
+            formData.append('chunkIndex', chunkIndex.toString());
+            formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`);
+            res = await fetch('/api/upload/chunk', { method: 'POST', body: formData });
+          }
+
           if (res.ok) {
             completedChunks.add(chunkIndex);
-            // Save completed progress to localStorage
             try { localStorage.setItem(resumeKey, JSON.stringify(Array.from(completedChunks))); } catch {}
 
             uploadedBytesTotal += chunkBlob.size;
             const pct = Math.round((completedChunks.size / totalChunks) * 100);
             setProgressPercent(pct);
 
-            // Calculate live MB/s and ETA
+            // Calculate live MB/s speed & ETA
             const elapsedSec = (Date.now() - startTime) / 1000;
-            if (elapsedSec > 0.5) {
+            if (elapsedSec > 0.3) {
               const speedBytesPerSec = uploadedBytesTotal / elapsedSec;
               const mbps = (speedBytesPerSec / (1024 * 1024)).toFixed(1);
               setUploadSpeedMbps(parseFloat(mbps));
@@ -144,12 +164,12 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
         } catch (e) {
           attempts--;
           if (attempts === 0) throw e;
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 800));
         }
       }
     };
 
-    // 3. Run worker pool with max CONCURRENCY connections
+    // 3. Run worker pool with 8 concurrent connection threads
     let index = 0;
     const workerPool = Array(CONCURRENCY).fill(0).map(async () => {
       while (index < chunkIndicesToUpload.length && !cancelUploadRef.current) {
@@ -167,12 +187,12 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     // Clear resume storage after completion
     try { localStorage.removeItem(resumeKey); } catch {}
 
-    // 4. Send upload completion trigger to server
-    setStatusMessage('Chunks assembled! Dispatching 100% Cloud Transcoder...');
+    // 4. Trigger upload completion & Cloud Transcoder
+    setStatusMessage('Assembly complete! Triggering 100% Cloud Transcoder...');
     const completeRes = await fetch('/api/upload/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId, jobId, totalChunks }),
+      body: JSON.stringify({ videoId, jobId, totalChunks, isDirectB2 }),
     });
 
     const completeData = await completeRes.json();
@@ -253,9 +273,9 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             </div>
             <div>
               <p className="text-white font-bold text-base">Select or drop a video file</p>
-              <p className="text-text-secondary text-xs mt-1">100% Cloud HLS Transcoding • Multi-Audio & Subtitles</p>
+              <p className="text-text-secondary text-xs mt-1">Direct Cloud Stream • 5 MB/s - 50 MB/s Rapid Engine</p>
             </div>
-            <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (Parallel Resumable Upload)</span>
+            <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (8x Parallel Direct Cloud Upload)</span>
           </>
         )}
 
@@ -307,7 +327,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           {/* Glowing Animated Progress Bar */}
           <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden p-0.5 border border-white/5 relative">
             <div
-              className="bg-gradient-to-r from-red-600 via-accent to-red-400 h-full rounded-full transition-all duration-300 shadow-glow-red"
+              className="bg-gradient-to-r from-red-600 via-accent to-emerald-400 h-full rounded-full transition-all duration-300 shadow-glow-red"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -316,7 +336,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             {/* Speed */}
             <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center">
               <span className="text-white/50 text-[10px] uppercase font-bold tracking-wider">Rapid Speed</span>
-              <span className="text-emerald-400 font-bold font-mono text-xs mt-0.5">🚀 {uploadSpeedMbps} MB/s</span>
+              <span className="text-emerald-400 font-extrabold font-mono text-sm mt-0.5">⚡ {uploadSpeedMbps} MB/s</span>
             </div>
 
             {/* Transferred MB */}
@@ -337,7 +357,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           </div>
 
           <div className="flex items-center justify-between text-[11px] text-white/50 pt-1 font-mono">
-            <span>⚡ 4x Parallel Workers</span>
+            <span>⚡ Direct Cloud Ingestion (8x Workers)</span>
             <span>0% Local CPU Load (Cloud Processing)</span>
           </div>
         </div>
@@ -376,7 +396,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            Uploading in Parallel… ({progressPercent}%)
+            Direct Cloud Rapid Stream… ({progressPercent}%)
           </>
         ) : 'Upload & Cloud Transcode'}
       </button>
