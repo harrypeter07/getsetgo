@@ -13,14 +13,14 @@ export async function GET(_request: NextRequest) {
       .single();
 
     if (error || !data) {
-      return NextResponse.json({ connected: false, status: 'offline' }, { status: 200 });
+      return NextResponse.json({ connected: false, status: 'offline', videos: [] }, { status: 200 });
     }
 
     const lastSeen = new Date(data.created_at).getTime();
     const now = Date.now();
     const isAlive = (now - lastSeen) < 45000; // Heartbeat valid within 45 seconds
 
-    let meta = { videoCount: 0, targetFolder: 'C:\\ShimpliVideos' };
+    let meta: any = { videoCount: 0, targetFolder: 'C:\\ShimpliVideos', videos: [] };
     try {
       if (data.description) meta = JSON.parse(data.description);
     } catch {}
@@ -31,9 +31,10 @@ export async function GET(_request: NextRequest) {
       publicBaseUrl: data.master_manifest_url,
       videoCount: meta.videoCount || 0,
       targetFolder: meta.targetFolder || 'C:\\ShimpliVideos',
+      videos: meta.videos || [],
       lastSeenSecondsAgo: Math.round((now - lastSeen) / 1000),
     }, { status: 200 });
   } catch (err: any) {
-    return NextResponse.json({ connected: false, status: 'offline', error: err.message }, { status: 200 });
+    return NextResponse.json({ connected: false, status: 'offline', videos: [], error: err.message }, { status: 200 });
   }
 }

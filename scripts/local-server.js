@@ -45,17 +45,28 @@ console.log(`\n🍿 [Shimpli Laptop Server] Hosting videos from: "${targetFolder
 const SUPPORTED_EXTS = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
 let publicBaseUrl = `http://localhost:${PORT}`;
 
-// Send heartbeat to Supabase DB so mobile devices know server is online
+// Send heartbeat to Supabase DB so mobile devices receive laptop videos
 async function sendHeartbeat() {
   if (!supabase) return;
   const statusId = '00000000-0000-0000-0000-000000000000';
+  const enrichedList = localVideos.map(v => ({
+    name: v.fileName || v.title,
+    size: v.size,
+    objectUrl: `${publicBaseUrl}/stream?file=${encodeURIComponent(v.filePath)}`,
+    thumbnailUrl: `${publicBaseUrl}/thumbnail?file=${encodeURIComponent(v.filePath)}`,
+  }));
+
   try {
     await supabase.from('videos').upsert({
       id: statusId,
       title: '__LAPTOP_SERVER_STATUS__',
       status: 'online',
       master_manifest_url: publicBaseUrl,
-      description: JSON.stringify({ videoCount: localVideos.length, targetFolder }),
+      description: JSON.stringify({
+        videoCount: localVideos.length,
+        targetFolder,
+        videos: enrichedList,
+      }),
       created_at: new Date().toISOString(),
     });
   } catch (err) {}
@@ -165,9 +176,10 @@ const server = http.createServer((req, res) => {
   if (reqUrl.pathname === '/list') {
     localVideos = scanVideos(targetFolder);
     const enrichedList = localVideos.map(v => ({
-      ...v,
+      name: v.fileName || v.title,
+      size: v.size,
+      objectUrl: `${publicBaseUrl}/stream?file=${encodeURIComponent(v.filePath)}`,
       thumbnailUrl: `${publicBaseUrl}/thumbnail?file=${encodeURIComponent(v.filePath)}`,
-      streamUrl: `${publicBaseUrl}/stream?file=${encodeURIComponent(v.filePath)}`,
     }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(enrichedList));

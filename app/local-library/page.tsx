@@ -85,32 +85,23 @@ export default function LocalLibraryPage() {
         if (list && list.length > 0) {
           setFolderName('C:\\ShimpliVideos');
           const items: LocalVideoItem[] = list.map((item: any) => ({
-            name: item.fileName || item.title,
+            name: item.fileName || item.name || item.title,
             size: item.size || 0,
-            objectUrl: `http://localhost:4000/stream?file=${encodeURIComponent(item.filePath)}`,
-            thumbnailUrl: `http://localhost:4000/thumbnail?file=${encodeURIComponent(item.filePath)}`,
+            objectUrl: item.objectUrl || item.streamUrl || `http://localhost:4000/stream?file=${encodeURIComponent(item.filePath)}`,
+            thumbnailUrl: item.thumbnailUrl || `http://localhost:4000/thumbnail?file=${encodeURIComponent(item.filePath)}`,
           }));
           setVideos(items);
-          // Do NOT auto-play first video on mount; wait for explicit click
           return;
         }
 
-        // 2. Remote devices (phones, friends) fetch laptop videos from Vercel API
-        const apiRes = await fetch('/api/videos');
-        if (apiRes.ok) {
-          const data = await apiRes.json();
-          const allVideos = data.videos || data;
-          if (Array.isArray(allVideos) && allVideos.length > 0) {
-            setFolderName('C:\\ShimpliVideos (Laptop Server Active)');
-            const items: LocalVideoItem[] = allVideos.map((v: any) => ({
-              name: v.title,
-              size: 0,
-              objectUrl: v.master_manifest_url,
-              thumbnailUrl: v.thumbnail_url,
-            }));
-            setVideos(items);
-            // Do NOT auto-play first video on mount; wait for explicit click
-            console.log(`[Local Library] Loaded ${items.length} laptop videos!`);
+        // 2. Mobile devices query Vercel API status bridge to fetch laptop videos
+        const statusRes = await fetch('/api/local-server-status');
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          if (statusData.connected && Array.isArray(statusData.videos) && statusData.videos.length > 0) {
+            setFolderName('C:\\ShimpliVideos (Laptop Connected)');
+            setVideos(statusData.videos);
+            console.log(`[Local Library Mobile] Loaded ${statusData.videos.length} laptop videos via API bridge!`);
           }
         }
       } catch (err) {
@@ -156,7 +147,7 @@ export default function LocalLibraryPage() {
       }
 
       setVideos(items);
-      setActiveVideo(null); // Keep player closed until user clicks card
+      setActiveVideo(null);
       if (items.length === 0) {
         setError(`No supported video files (.mp4, .webm, .mkv, .mov) found in "${dirHandle.name}".`);
       }
@@ -211,7 +202,7 @@ export default function LocalLibraryPage() {
         </button>
       </div>
 
-      {/* Live Server Telemetry Dashboard Banner */}
+      {/* Clean Server Telemetry Status Banner */}
       {serverStatus && (
         <div className="mb-8 bg-surface-alt/90 border border-emerald-500/30 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4 font-mono text-xs text-white">
           <div className="flex items-center gap-3">
@@ -219,7 +210,7 @@ export default function LocalLibraryPage() {
             <div>
               <span className="font-bold text-white">Laptop Server: </span>
               <span className={serverStatus.connected ? 'text-emerald-400 font-extrabold' : 'text-danger font-extrabold'}>
-                {serverStatus.connected ? 'ACTIVE & CONNECTED' : 'DISCONNECTED'}
+                {serverStatus.connected ? 'ACTIVE & ONLINE' : 'DISCONNECTED'}
               </span>
               <span className="text-white/40 ml-2">({serverStatus.targetFolder})</span>
             </div>
@@ -229,10 +220,6 @@ export default function LocalLibraryPage() {
             <div>
               <span>Latency: </span>
               <span className="text-emerald-400 font-bold">{serverStatus.latencyMs} ms</span>
-            </div>
-            <div>
-              <span>Public Tunnel: </span>
-              <span className="text-accent font-bold truncate max-w-[180px] inline-block align-bottom">{serverStatus.publicBaseUrl}</span>
             </div>
             <div>
               <span>Files Indexed: </span>
