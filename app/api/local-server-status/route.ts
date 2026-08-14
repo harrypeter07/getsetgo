@@ -1,56 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export const dynamic = 'force-dynamic';
+export const dynamic   = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
-// Create a fresh Supabase client directly (avoid any module-level singleton caching)
+// Create a fresh Supabase client per request with no caching
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(url, key, {
-    auth: { persistSession: false },
+    auth  : { persistSession: false },
+    global: {
+      headers: {
+        // Prevent any Supabase CDN/proxy caching
+        'Cache-Control': 'no-store, no-cache',
+        'Pragma'       : 'no-cache',
+      },
+    },
   });
 }
 
 export async function GET(request: NextRequest) {
-  try {
-    const supabase  = getSupabase();
-    const statusId  = '00000000-0000-0000-0000-000000000000';
+  const responseHeaders = {
+    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+    'Pragma'       : 'no-cache',
+    'Expires'      : '0',
+  };
 
-    const { data, error } = await supabase
+  try {
+    const supabase = getSupabase();
+
+    // Use .limit(1) + filter to bypass any query caching layer
+    const { data: rows, error } = await supabase
       .from('videos')
-      .select('*')
-      .eq('id', statusId)
-      .single();
+      .select('id, title, status, master_manifest_url, description, created_at')
+      .eq('id', '00000000-0000-0000-0000-000000000000')
+      .limit(1);
+
+    const data = rows?.[0] ?? null;
 
     if (error || !data) {
       return NextResponse.json(
-        { connected: false, status: 'offline', videos: [], reason: error?.message },
-        { status: 200, headers: { 'Cache-Control': 'no-store' } }
+        { connected: false, status: 'offline', videos: [], reason: error?.message || 'No data' },
+        { status: 200, headers: responseHeaders }
       );
     }
 
-    // Parse description JSON — contains serverTimestamp written by local-server.js
+    // Parse heartbeat payload
     let meta: any = { videoCount: 0, targetFolder: 'C:\\ShimpliVideos', videos: [], serverTimestamp: null };
     try {
       if (data.description) meta = JSON.parse(data.description);
     } catch {}
 
-    // Use serverTimestamp from payload (most reliable — doesn't depend on Supabase created_at RLS)
-    // Fallback to created_at column if serverTimestamp missing (old server versions)
+    // Freshness: prefer serverTimestamp in payload (set by local-server.js), fallback to created_at
     const timestampStr = meta.serverTimestamp || data.created_at;
     const lastSeen     = new Date(timestampStr).getTime();
-    const now          = Date.now();
-    const ageSeconds   = Math.round((now - lastSeen) / 1000);
-    const isAlive      = ageSeconds < 60; // consider alive if heartbeat within 60 seconds
+    const ageSeconds   = Math.round((Date.now() - lastSeen) / 1000);
+    const isAlive      = ageSeconds < 60; // alive if heartbeat within 60 seconds
 
-    // Build the base URL for thumbnail proxy rewriting
+    // Rewrite thumbnail URLs through our Vercel proxy to bypass tunnel interstitial pages
     const host       = request.headers.get('host') || 'shimpli.vercel.app';
     const protocol   = host.startsWith('localhost') ? 'http' : 'https';
     const vercelBase = `${protocol}://${host}`;
 
-    // Rewrite thumbnail URLs through Vercel proxy so mobile browsers
-    // never hit the tunnel directly (avoids cloudflared/localtunnel interstitial)
     const videos = (meta.videos || []).map((v: any) => ({
       ...v,
       thumbnailUrl: v.thumbnailUrl
@@ -66,18 +79,15 @@ export async function GET(request: NextRequest) {
       targetFolder      : meta.targetFolder || 'C:\\ShimpliVideos',
       videos,
       lastSeenSecondsAgo: ageSeconds,
-      // debug info
       _dbStatus         : data.status,
       _timestampUsed    : timestampStr,
-    }, {
-      status : 200,
-      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
-    });
+      _ageSeconds       : ageSeconds,
+    }, { status: 200, headers: responseHeaders });
 
   } catch (err: any) {
     return NextResponse.json(
       { connected: false, status: 'offline', videos: [], error: err.message },
-      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+      { status: 200, headers: responseHeaders }
     );
   }
 }
