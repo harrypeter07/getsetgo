@@ -1,14 +1,15 @@
 /**
- * 🍿 Shimpli Local Laptop Video Server Agent (Zero-Upload High-Speed Streaming Engine)
+ * 🍿 Shimpli Laptop Local Server with Global Public HTTPS Tunneling
  *
- * Automatically watches a folder on your laptop (e.g. C:\ShimpliVideos or D:\Movies)
- * and streams videos directly to your website with ZERO upload wait time!
+ * Streams videos directly from your laptop to anyone in ANY city worldwide
+ * without uploading anything to cloud storage!
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const localtunnel = require('localtunnel');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
 
@@ -31,7 +32,7 @@ if (!fs.existsSync(targetFolder)) {
   }
 }
 
-console.log(`\n🍿 [Shimpli Local Server] Hosting videos from: "${targetFolder}"`);
+console.log(`\n🍿 [Shimpli Laptop Server] Hosting videos from: "${targetFolder}"`);
 
 // Supabase setup
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -39,6 +40,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const SUPPORTED_EXTS = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
+let publicBaseUrl = `http://localhost:${PORT}`;
 
 function scanVideos(dir) {
   let results = [];
@@ -70,7 +72,6 @@ function scanVideos(dir) {
 let localVideos = scanVideos(targetFolder);
 console.log(`✅ Indexed ${localVideos.length} video(s) on your laptop!\n`);
 
-// Maintain tracked set of registered titles to eliminate duplicate logs
 const syncedTitles = new Set();
 
 async function syncToSupabase() {
@@ -81,24 +82,27 @@ async function syncToSupabase() {
   localVideos = scanVideos(targetFolder);
 
   for (const item of localVideos) {
-    if (syncedTitles.has(item.title)) {
-      continue;
-    }
-
-    const localStreamUrl = `http://localhost:${PORT}/stream?file=${encodeURIComponent(item.filePath)}`;
+    const publicStreamUrl = `${publicBaseUrl}/stream?file=${encodeURIComponent(item.filePath)}`;
     try {
-      const { data: existing } = await supabase.from('videos').select('id').eq('title', item.title).limit(1);
+      const { data: existing } = await supabase.from('videos').select('id, master_manifest_url').eq('title', item.title).limit(1);
+
       if (!existing || existing.length === 0) {
         await supabase.from('videos').insert({
           title: item.title,
           status: 'ready',
-          master_manifest_url: localStreamUrl,
-          available_qualities: ['1080p (Laptop Direct ⚡)'],
+          master_manifest_url: publicStreamUrl,
+          available_qualities: ['1080p (Laptop Global Direct 🌍)'],
         });
         syncedTitles.add(item.title);
-        console.log(`✨ Registered on Website: "${item.title}"`);
-      } else {
+        console.log(`✨ Registered Worldwide Stream: "${item.title}"`);
+      } else if (existing[0] && existing[0].master_manifest_url !== publicStreamUrl) {
+        // Update URL if tunnel refreshed
+        await supabase.from('videos').update({
+          master_manifest_url: publicStreamUrl,
+          available_qualities: ['1080p (Laptop Global Direct 🌍)'],
+        }).eq('id', existing[0].id);
         syncedTitles.add(item.title);
+        console.log(`🔄 Updated Stream URL for Remote Access: "${item.title}"`);
       }
     } catch (err) {
       console.warn(`Could not sync "${item.title}" to Supabase:`, err.message);
@@ -106,31 +110,12 @@ async function syncToSupabase() {
   }
 }
 
-syncToSupabase();
-
-// Real-Time Folder Watcher with 1.5s Debounce Timer
-let watchTimer = null;
-try {
-  fs.watch(targetFolder, { recursive: true }, (eventType, filename) => {
-    if (filename && SUPPORTED_EXTS.some(ext => filename.toLowerCase().endsWith(ext))) {
-      if (watchTimer) clearTimeout(watchTimer);
-      watchTimer = setTimeout(() => {
-        console.log(`\n🔔 Syncing new/updated video files from "${targetFolder}"...`);
-        syncToSupabase();
-      }, 1500);
-    }
-  });
-  console.log(`👀 Watching "${targetFolder}" for new video files in real-time...`);
-} catch (wErr) {
-  console.warn('Folder watching active in manual refresh mode.');
-}
-
 // High-Speed HTTP Server with Range Requests (Partial Content) for instant video seeking
 const server = http.createServer((req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, bypass-tunnel-reminder');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -191,9 +176,40 @@ const server = http.createServer((req, res) => {
   `);
 });
 
-server.listen(PORT, () => {
-  console.log(`\n🚀 [Shimpli Laptop Local Server Ready!]`);
-  console.log(`🔗 Local Stream Base: http://localhost:${PORT}`);
-  console.log(`📁 Videos Folder: "${targetFolder}"`);
-  console.log(`💡 Drop any video file into "${targetFolder}" to instantly show it on your website!\n`);
+server.listen(PORT, async () => {
+  console.log(`\n🚀 [Shimpli Laptop Server Active on Port ${PORT}]`);
+
+  // Launch Global Secure HTTPS Public Tunnel
+  try {
+    console.log(`🌐 Generating Global Public HTTPS Tunnel for remote users in other cities...`);
+    const tunnel = await localtunnel({ port: PORT });
+    publicBaseUrl = tunnel.url;
+    console.log(`🌍 PUBLIC GLOBAL STREAM URL: ${publicBaseUrl}`);
+
+    tunnel.on('close', () => {
+      console.warn('⚠️ Public tunnel closed.');
+    });
+  } catch (tErr) {
+    console.warn('⚠️ Could not open public tunnel. Falling back to local IP:', tErr.message);
+  }
+
+  // Sync to database with public stream URL
+  await syncToSupabase();
+
+  // Real-Time Folder Watcher
+  let watchTimer = null;
+  try {
+    fs.watch(targetFolder, { recursive: true }, (eventType, filename) => {
+      if (filename && SUPPORTED_EXTS.some(ext => filename.toLowerCase().endsWith(ext))) {
+        if (watchTimer) clearTimeout(watchTimer);
+        watchTimer = setTimeout(() => {
+          console.log(`\n🔔 Syncing new/updated video files from "${targetFolder}"...`);
+          syncToSupabase();
+        }, 1500);
+      }
+    });
+    console.log(`👀 Watching "${targetFolder}" for new video files in real-time...`);
+  } catch (wErr) {
+    console.warn('Folder watching active in manual refresh mode.');
+  }
 });
