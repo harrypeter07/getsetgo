@@ -5,12 +5,8 @@ import { join } from 'path';
 import os from 'os';
 import type { ApiError } from '@/lib/types';
 
-// App Router: configure body size limit for this route (500 MB uploads)
-export const config = {
-  api: {
-    bodyParser: false, // We use formData() directly
-  },
-};
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 // ─── Validation schema ────────────────────────────────────────────────────────
 
