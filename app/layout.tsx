@@ -4,8 +4,8 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: {
-    default: 'GetSetGo — Adaptive HD Video Streaming',
-    template: '%s | GetSetGo',
+    default: 'Shimpli — Adaptive HD Video Streaming',
+    template: '%s | Shimpli',
   },
   description: 'Ultra-fast adaptive bitrate streaming platform. Automatically transcoded for low-bandwidth 2G to 4K speeds.',
   icons: {
@@ -34,20 +34,18 @@ export default function RootLayout({
         <header className="sticky top-0 z-50 glass-nav transition-all duration-300">
           <nav className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-4">
             
-            {/* Logo */}
+            {/* Shimpli Logo */}
             <Link
               href="/"
               id="nav-home"
               className="flex items-center gap-2.5 group transition-transform duration-200 hover:scale-[1.02]"
             >
-              {/* Custom G emblem */}
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-accent to-[#B81D24] flex items-center justify-center text-white text-xs font-black shadow-glow-red border border-white/20">
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
+              {/* Shimpli 'S' emblem badge */}
+              <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-accent via-[#FF2E38] to-[#B81D24] flex items-center justify-center text-white font-heading font-black text-lg shadow-glow-red border border-white/20">
+                S
               </div>
-              <span className="font-heading font-extrabold text-lg md:text-xl tracking-tight text-white group-hover:text-accent transition-colors">
-                GETSETGO
+              <span className="font-heading font-extrabold text-xl md:text-2xl tracking-tight text-white group-hover:text-accent transition-colors">
+                SHIMPLI
               </span>
             </Link>
 
@@ -56,7 +54,7 @@ export default function RootLayout({
               <Link
                 href="/"
                 id="nav-browse"
-                className="px-3.5 py-2 text-text-secondary hover:text-white text-sm font-medium rounded-lg hover:bg-white/5 transition-all flex items-center gap-1.5"
+                className="px-3.5 py-2 text-text-secondary hover:text-white text-sm font-medium rounded-xl hover:bg-white/5 transition-all flex items-center gap-1.5"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 opacity-70">
                   <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
@@ -68,8 +66,8 @@ export default function RootLayout({
                 href="/upload"
                 id="nav-upload"
                 className="
-                  ml-2 px-4 py-2 min-h-[38px] flex items-center gap-2
-                  bg-gradient-to-r from-accent to-[#B81D24] hover:from-accent-hover hover:to-accent text-white text-sm font-semibold rounded-xl
+                  ml-2 px-4 py-2 min-h-[40px] flex items-center gap-2
+                  bg-gradient-to-r from-accent to-[#B81D24] hover:from-accent-hover hover:to-accent text-white text-sm font-bold rounded-xl
                   shadow-glow-red hover:shadow-lg hover:shadow-accent/40
                   transition-all duration-200 active:scale-95 border border-white/10
                 "
@@ -95,9 +93,9 @@ export default function RootLayout({
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="font-mono text-emerald-400">Stream Engine Active</span>
               <span className="text-white/20">•</span>
-              <span>HLS Adaptive Bitrate (AMD GPU Accelerated)</span>
+              <span>Shimpli Adaptive HLS (AMD GPU Accelerated)</span>
             </div>
-            <p className="text-white/40">© {new Date().getFullYear()} GetSetGo — Premium Low-Bandwidth Video Streaming</p>
+            <p className="text-white/40">© {new Date().getFullYear()} Shimpli — Premium Low-Bandwidth Video Streaming</p>
           </div>
         </footer>
       </body>

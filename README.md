@@ -1,6 +1,6 @@
-# GetSetGo 🎬
+# Shimpli 🎬
 
-**GetSetGo** is a high-performance, Netflix-style Adaptive Bitrate (HLS) video streaming web application built with Next.js, Cloudflare Workers, Backblaze B2, and Supabase.
+**Shimpli** is a high-performance, Netflix-style Adaptive Bitrate (HLS) video streaming web application built with Next.js, Cloudflare Workers, Backblaze B2, and Supabase.
 
 ## 🚀 Key Features
 
@@ -8,6 +8,7 @@
 - **Hardware-Accelerated Transcoding**: Powered by FFmpeg with AMD GPU (`h264_amf`) acceleration & parallel multi-quality encoding.
 - **Netflix-Style Video Player**:
   - Auto-hiding control panel
+  - Phone / Mobile Landscape Orientation Rotate button (`screen.orientation.lock('landscape')`)
   - Unified Settings menu (Quality, Playback Speed 0.25× to 2×, Audio Track selection)
   - Netflix Red progress bar with hover scrub preview
   - Keyboard shortcuts (`Space`, `F`, `M`, `←`, `→`)
