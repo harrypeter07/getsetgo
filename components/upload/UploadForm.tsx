@@ -16,6 +16,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   // Upload progress states
   const [progressPercent, setProgressPercent] = useState(0);
@@ -25,6 +26,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelUploadRef = useRef(false);
+  const isPausedRef = useRef(false);
 
   const handleFileChange = useCallback((f: File | null) => {
     if (!f) return;
@@ -50,9 +52,31 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
   const handleDragLeave = () => setIsDragging(false);
 
+  // ── Pause & Cancel Controls ────────────────────────────────────────────────
+  const handleTogglePause = () => {
+    setIsPaused(prev => {
+      const next = !prev;
+      isPausedRef.current = next;
+      setStatusMessage(next ? '⏸️ Upload Paused (Progress Saved)' : '⚡ Resuming Rapid Direct Upload...');
+      return next;
+    });
+  };
+
+  const handleCancelUpload = () => {
+    cancelUploadRef.current = true;
+    isPausedRef.current = false;
+    setIsPaused(false);
+    setIsUploading(false);
+    setProgressPercent(0);
+    setStatusMessage('');
+    setError('Upload cancelled.');
+  };
+
   // ── Ultra-Rapid Direct Cloud Parallel Chunk Uploader ───────────────────────
   const uploadFileInParallelChunks = async (selectedFile: File, videoTitle: string) => {
     setIsUploading(true);
+    setIsPaused(false);
+    isPausedRef.current = false;
     setError(null);
     setProgressPercent(0);
     cancelUploadRef.current = false;
@@ -109,17 +133,23 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     const uploadSingleChunk = async (chunkIndex: number): Promise<void> => {
       if (cancelUploadRef.current) return;
 
+      // Wait loop if paused
+      while (isPausedRef.current && !cancelUploadRef.current) {
+        await new Promise(r => setTimeout(r, 400));
+      }
+
+      if (cancelUploadRef.current) return;
+
       const startByte = chunkIndex * chunkSize;
       const endByte   = Math.min(startByte + chunkSize, selectedFile.size);
       const chunkBlob = selectedFile.slice(startByte, endByte);
 
       let attempts = 3;
-      while (attempts > 0) {
+      while (attempts > 0 && !cancelUploadRef.current) {
         try {
           let res: Response;
 
           if (isDirectB2) {
-            // Direct Browser -> Backblaze B2 Upload (Max Bandwidth Saturation)
             const b2FileName = encodeURIComponent(`raw/${videoId}_parts/chunk_${String(chunkIndex).padStart(5, '0')}`);
             res = await fetch(b2UploadUrl, {
               method: 'POST',
@@ -132,7 +162,6 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
               body: chunkBlob,
             });
           } else {
-            // Fallback API chunk route
             const formData = new FormData();
             formData.append('videoId', videoId);
             formData.append('chunkIndex', chunkIndex.toString());
@@ -150,7 +179,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
             // Calculate live MB/s speed & ETA
             const elapsedSec = (Date.now() - startTime) / 1000;
-            if (elapsedSec > 0.3) {
+            if (elapsedSec > 0.3 && !isPausedRef.current) {
               const speedBytesPerSec = uploadedBytesTotal / elapsedSec;
               const mbps = (speedBytesPerSec / (1024 * 1024)).toFixed(1);
               setUploadSpeedMbps(parseFloat(mbps));
@@ -209,7 +238,9 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     try {
       await uploadFileInParallelChunks(file, title.trim());
     } catch (err: any) {
-      setError(err.message || 'Upload failed. Please try again.');
+      if (err.message !== 'Upload cancelled') {
+        setError(err.message || 'Upload failed. Please try again.');
+      }
       setIsUploading(false);
     }
   };
@@ -275,7 +306,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
               <p className="text-white font-bold text-base">Select or drop a video file</p>
               <p className="text-text-secondary text-xs mt-1">Direct Cloud Stream • 5 MB/s - 50 MB/s Rapid Engine</p>
             </div>
-            <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (8x Parallel Direct Cloud Upload)</span>
+            <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (Pause / Resume / Cancel support)</span>
           </>
         )}
 
@@ -313,12 +344,12 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
         />
       </div>
 
-      {/* Progress & Speed Bar */}
+      {/* Progress & Control Banner */}
       {isUploading && (
         <div className="flex flex-col gap-3.5 bg-surface-alt/90 border border-accent/30 rounded-2xl p-5 shadow-2xl animate-fade-in">
           <div className="flex items-center justify-between text-xs text-white">
             <span className="font-bold flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+              <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-amber-400' : 'bg-emerald-500 animate-ping'}`} />
               {statusMessage}
             </span>
             <span className="font-mono text-accent font-extrabold text-sm">{progressPercent}%</span>
@@ -327,7 +358,9 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           {/* Glowing Animated Progress Bar */}
           <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden p-0.5 border border-white/5 relative">
             <div
-              className="bg-gradient-to-r from-red-600 via-accent to-emerald-400 h-full rounded-full transition-all duration-300 shadow-glow-red"
+              className={`h-full rounded-full transition-all duration-300 shadow-glow-red ${
+                isPaused ? 'bg-amber-500' : 'bg-gradient-to-r from-red-600 via-accent to-emerald-400'
+              }`}
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -336,7 +369,9 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             {/* Speed */}
             <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center">
               <span className="text-white/50 text-[10px] uppercase font-bold tracking-wider">Rapid Speed</span>
-              <span className="text-emerald-400 font-extrabold font-mono text-sm mt-0.5">⚡ {uploadSpeedMbps} MB/s</span>
+              <span className="text-emerald-400 font-extrabold font-mono text-sm mt-0.5">
+                {isPaused ? '0 MB/s' : `⚡ ${uploadSpeedMbps} MB/s`}
+              </span>
             </div>
 
             {/* Transferred MB */}
@@ -351,14 +386,41 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center">
               <span className="text-white/50 text-[10px] uppercase font-bold tracking-wider">Est. Time</span>
               <span className="text-accent font-bold font-mono text-xs mt-0.5">
-                ⏳ {etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`}
+                {isPaused ? 'Paused' : `⏳ ${etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`}`}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-[11px] text-white/50 pt-1 font-mono">
-            <span>⚡ Direct Cloud Ingestion (8x Workers)</span>
-            <span>0% Local CPU Load (Cloud Processing)</span>
+          {/* Pause & Cancel Controls Row */}
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="button"
+              id="upload-pause-btn"
+              onClick={handleTogglePause}
+              className="flex-1 py-2 px-4 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2"
+            >
+              {isPaused ? (
+                <>
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-emerald-400"><path d="M8 5v14l11-7z"/></svg>
+                  Resume Upload
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-amber-400"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                  Pause Upload
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              id="upload-cancel-btn"
+              onClick={handleCancelUpload}
+              className="py-2 px-4 bg-danger/20 hover:bg-danger text-danger hover:text-white font-bold text-xs rounded-xl border border-danger/30 transition-all flex items-center justify-center gap-1.5"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              Cancel
+            </button>
           </div>
         </div>
       )}
