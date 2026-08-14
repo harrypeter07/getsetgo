@@ -8,6 +8,18 @@ interface LocalVideoItem {
   size: number;
   file?: File;
   objectUrl: string;
+  thumbnailUrl?: string;
+}
+
+interface ServerStatus {
+  connected: boolean;
+  status: string;
+  port: number;
+  targetFolder: string;
+  videoCount: number;
+  publicBaseUrl: string;
+  uptimeSeconds: number;
+  latencyMs: number;
 }
 
 export default function LocalLibraryPage() {
@@ -15,8 +27,35 @@ export default function LocalLibraryPage() {
   const [activeVideo, setActiveVideo] = useState<LocalVideoItem | null>(null);
   const [folderName, setFolderName] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isNodeServerActive, setIsNodeServerActive] = useState(false);
+  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Poll Server Health Status every 4 seconds
+  useEffect(() => {
+    async function checkStatus() {
+      const pingStart = Date.now();
+      try {
+        const res = await fetch('http://localhost:4000/status');
+        if (res.ok) {
+          const data = await res.json();
+          const latencyMs = Date.now() - pingStart;
+          setServerStatus({
+            ...data,
+            connected: true,
+            latencyMs,
+          });
+        } else {
+          setServerStatus(prev => prev ? { ...prev, connected: false } : null);
+        }
+      } catch {
+        setServerStatus(prev => prev ? { ...prev, connected: false } : null);
+      }
+    }
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Load laptop videos automatically on mount via Vercel API or local server
   useEffect(() => {
@@ -32,12 +71,12 @@ export default function LocalLibraryPage() {
         } catch {}
 
         if (list && list.length > 0) {
-          setIsNodeServerActive(true);
-          setFolderName('C:\\ShimpliVideos (Local NVMe Direct)');
+          setFolderName('C:\\ShimpliVideos (Local Direct)');
           const items: LocalVideoItem[] = list.map((item: any) => ({
             name: item.fileName || item.title,
             size: item.size || 0,
             objectUrl: `http://localhost:4000/stream?file=${encodeURIComponent(item.filePath)}`,
+            thumbnailUrl: `http://localhost:4000/thumbnail?file=${encodeURIComponent(item.filePath)}`,
           }));
           setVideos(items);
           setActiveVideo(items[0]);
@@ -50,12 +89,12 @@ export default function LocalLibraryPage() {
           const data = await apiRes.json();
           const allVideos = data.videos || data;
           if (Array.isArray(allVideos) && allVideos.length > 0) {
-            setIsNodeServerActive(true);
             setFolderName('C:\\ShimpliVideos (Laptop Server Active)');
             const items: LocalVideoItem[] = allVideos.map((v: any) => ({
               name: v.title,
               size: 0,
               objectUrl: v.master_manifest_url,
+              thumbnailUrl: v.thumbnail_url,
             }));
             setVideos(items);
             setActiveVideo(items[0]);
@@ -83,7 +122,6 @@ export default function LocalLibraryPage() {
       // @ts-ignore
       const dirHandle = await window.showDirectoryPicker();
       setFolderName(dirHandle.name);
-      setIsNodeServerActive(false);
 
       const items: LocalVideoItem[] = [];
       const SUPPORTED_EXTS = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
@@ -123,22 +161,26 @@ export default function LocalLibraryPage() {
   return (
     <div className="min-h-screen bg-background text-text-primary p-4 md:p-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8 border-b border-white/10 pb-6">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 border-b border-white/10 pb-6">
         <div>
           <div className="flex items-center gap-3">
             <Link href="/" className="text-accent hover:underline text-xs font-bold uppercase tracking-wider">
               ← Back to Home
             </Link>
             <span className="text-white/30">•</span>
-            <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
-              {isNodeServerActive ? '🟢 Connected to Laptop Media Server' : '⚡ Instant 0-Upload Local Streaming'}
+            <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+              serverStatus?.connected
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+            }`}>
+              {serverStatus?.connected ? '🟢 Laptop Media Server CONNECTED' : '🔴 Server Offline (Click to Pick Folder)'}
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white mt-2">
-            💻 Laptop Media Library
+            💻 Laptop Media Server Dashboard
           </h1>
           <p className="text-text-secondary text-sm mt-1">
-            Videos stream directly from your laptop hard drive with 0 upload wait & zero bandwidth usage!
+            Videos stream directly from your laptop hard drive with 0 upload wait & zero cloud storage costs!
           </p>
         </div>
 
@@ -158,6 +200,37 @@ export default function LocalLibraryPage() {
         </button>
       </div>
 
+      {/* Live Server Telemetry Dashboard Banner */}
+      {serverStatus && (
+        <div className="mb-8 bg-surface-alt/90 border border-emerald-500/30 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4 font-mono text-xs text-white">
+          <div className="flex items-center gap-3">
+            <span className={`w-3 h-3 rounded-full ${serverStatus.connected ? 'bg-emerald-500 animate-ping' : 'bg-danger'}`} />
+            <div>
+              <span className="font-bold text-white">Laptop Server: </span>
+              <span className={serverStatus.connected ? 'text-emerald-400 font-extrabold' : 'text-danger font-extrabold'}>
+                {serverStatus.connected ? 'ACTIVE & CONNECTED' : 'DISCONNECTED'}
+              </span>
+              <span className="text-white/40 ml-2">({serverStatus.targetFolder})</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-6 text-white/70">
+            <div>
+              <span>Latency: </span>
+              <span className="text-emerald-400 font-bold">{serverStatus.latencyMs} ms</span>
+            </div>
+            <div>
+              <span>Public Tunnel: </span>
+              <span className="text-accent font-bold truncate max-w-[180px] inline-block align-bottom">{serverStatus.publicBaseUrl}</span>
+            </div>
+            <div>
+              <span>Files Indexed: </span>
+              <span className="text-white font-bold">{serverStatus.videoCount} Videos</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Active Video Player Screen */}
       {activeVideo && (
         <div className="mb-10 bg-surface border border-accent/30 rounded-3xl overflow-hidden shadow-2xl animate-fade-in">
@@ -165,6 +238,7 @@ export default function LocalLibraryPage() {
             <video
               key={activeVideo.objectUrl}
               src={activeVideo.objectUrl}
+              poster={activeVideo.thumbnailUrl}
               controls
               autoPlay
               className="w-full h-full object-contain"
@@ -174,7 +248,7 @@ export default function LocalLibraryPage() {
             <div>
               <h2 className="text-lg font-bold text-white truncate max-w-xl">{activeVideo.name}</h2>
               <p className="text-text-secondary text-xs font-mono mt-0.5">
-                {activeVideo.size ? `${(activeVideo.size / (1024 * 1024)).toFixed(1)} MB • ` : ''}Laptop Local Stream
+                {activeVideo.size ? `${(activeVideo.size / (1024 * 1024)).toFixed(1)} MB • ` : ''}Laptop Local Stream (1.5MB Tight Adaptive Chunks)
               </p>
             </div>
             <span className="text-emerald-400 text-xs font-bold font-mono bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 flex items-center gap-1.5">
@@ -201,7 +275,7 @@ export default function LocalLibraryPage() {
             <span className="text-accent font-mono text-sm font-extrabold">{videos.length} Files</span>
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
             {videos.map((item, idx) => {
               const isSelected = activeVideo?.name === item.name;
               return (
@@ -209,30 +283,43 @@ export default function LocalLibraryPage() {
                   key={idx}
                   onClick={() => setActiveVideo(item)}
                   className={`
-                    p-4 rounded-2xl border cursor-pointer transition-all duration-300 flex flex-col justify-between
+                    group p-3 rounded-2xl border cursor-pointer transition-all duration-300 flex flex-col justify-between
                     ${isSelected
                       ? 'bg-accent/10 border-accent shadow-glow-red scale-[1.02]'
                       : 'bg-surface border-white/10 hover:border-white/30 hover:bg-surface-alt'
                     }
                   `}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-accent text-white' : 'bg-white/5 text-white/50'}`}>
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-white font-bold text-sm truncate">{item.name}</h4>
-                      <p className="text-text-secondary text-xs font-mono mt-1">
-                        {item.size ? `${(item.size / (1024 * 1024)).toFixed(1)} MB` : 'Laptop Direct Stream'}
-                      </p>
+                  {/* Cover Picture / Thumbnail Preview */}
+                  <div className="relative aspect-video rounded-xl overflow-hidden bg-black/60 border border-white/10 mb-3 group-hover:border-accent/50 transition-colors">
+                    {item.thumbnailUrl ? (
+                      <img
+                        src={item.thumbnailUrl}
+                        alt={item.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          // Fallback icon if image fails to load
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-white/5 text-white/40">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8"><path d="M8 5v14l11-7z"/></svg>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center shadow-glow-red scale-90 group-hover:scale-100 transition-transform">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 ml-0.5"><path d="M8 5v14l11-7z"/></svg>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-white/50">
-                    <span>{isSelected ? '▶️ Now Playing' : 'Click to Stream'}</span>
-                    <span className="font-mono text-emerald-400">Global Direct</span>
+                  <div className="px-1">
+                    <h4 className="text-white font-bold text-sm truncate">{item.name}</h4>
+                    <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-white/50">
+                      <span>{isSelected ? '▶️ Now Playing' : (item.size ? `${(item.size / (1024 * 1024)).toFixed(1)} MB` : 'Stream')}</span>
+                      <span className="font-mono text-emerald-400 font-bold">1.5MB Chunks</span>
+                    </div>
                   </div>
                 </div>
               );
