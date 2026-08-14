@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="netflixRed" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E50914" />
+      <stop offset="100%" stop-color="#B81D24" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF3B47" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#E50914" stop-opacity="0" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#E50914" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Dark rounded container -->
+  <rect width="512" height="512" rx="128" fill="#141414" />
+  
+  <!-- Subtle inner border -->
+  <rect x="8" y="8" width="496" height="496" rx="120" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="8" />
+
+  <!-- N logo mark with play triangle -->
+  <g filter="url(#shadow)">
+    <!-- Left vertical bar of N -->
+    <rect x="120" y="112" width="72" height="288" rx="16" fill="url(#netflixRed)" />
+    
+    <!-- Diagonal of N -->
+    <path d="M180 112 L332 388 Q340 400 352 400 L380 400 Q392 400 392 384 L392 128 Q392 112 376 112 L340 112 Q328 112 328 128 L328 270 L198 112 Z" fill="#FF1E27" />
+    
+    <!-- Right vertical bar of N -->
+    <rect x="320" y="112" width="72" height="288" rx="16" fill="url(#netflixRed)" opacity="0.9" />
+
+    <!-- Play emblem overlay in center -->
+    <circle cx="256" cy="256" r="64" fill="#141414" stroke="url(#netflixRed)" stroke-width="8" />
+    <path d="M244 232 L278 256 L244 280 Z" fill="#FFFFFF" />
+  </g>
+</svg>

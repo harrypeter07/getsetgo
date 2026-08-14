@@ -7,7 +7,7 @@ interface UploadFormProps {
   onJobCreated: (jobId: string) => void;
 }
 
-const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
+const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska'];
 const MAX_SIZE_MB = 500;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
@@ -20,11 +20,8 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = useCallback((f: File): string | null => {
-    if (!ACCEPTED_TYPES.includes(f.type)) {
-      return `Unsupported file type: ${f.type}. Please upload MP4, MOV, or WebM.`;
-    }
     if (f.size > MAX_SIZE_BYTES) {
-      return `File too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is ${MAX_SIZE_MB} MB.`;
+      return `File size is ${(f.size / 1024 / 1024).toFixed(0)} MB. Maximum supported upload is ${MAX_SIZE_MB} MB.`;
     }
     return null;
   }, []);
@@ -89,7 +86,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-5 w-full max-w-lg mx-auto"
+      className="flex flex-col gap-6 w-full max-w-xl mx-auto"
       noValidate
     >
       {/* Drop zone / File picker */}
@@ -105,47 +102,47 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
         onDragLeave={handleDragLeave}
         className={`
           relative flex flex-col items-center justify-center gap-3
-          min-h-[180px] rounded-2xl border-2 border-dashed cursor-pointer
-          transition-all duration-200 p-6 text-center
+          min-h-[220px] rounded-3xl border-2 border-dashed cursor-pointer
+          transition-all duration-300 p-8 text-center
           ${isDragging
-            ? 'border-accent bg-accent/10 scale-[1.01]'
+            ? 'border-accent bg-accent/10 scale-[1.01] shadow-glow-red'
             : file
-              ? 'border-accent/50 bg-accent/5'
-              : 'border-white/20 bg-surface hover:border-accent/50 hover:bg-surface-alt'
+              ? 'border-accent/60 bg-accent/5'
+              : 'border-white/15 bg-surface hover:border-accent/40 hover:bg-surface-alt'
           }
         `}
       >
         {file ? (
           <>
-            <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-accent">
+            <div className="w-14 h-14 rounded-2xl bg-accent/20 border border-accent/40 flex items-center justify-center shadow-glow-red">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 text-accent">
                 <path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/>
               </svg>
             </div>
             <div>
-              <p className="text-text-primary font-semibold text-sm truncate max-w-xs">{file.name}</p>
-              <p className="text-text-secondary text-xs mt-0.5">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+              <p className="text-white font-bold text-base truncate max-w-sm">{file.name}</p>
+              <p className="text-text-secondary text-xs font-mono mt-1">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
             </div>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setFile(null); setTitle(''); }}
-              className="text-text-secondary hover:text-danger text-xs underline"
+              className="text-accent hover:text-white text-xs font-semibold underline transition-colors"
             >
-              Remove
+              Choose different file
             </button>
           </>
         ) : (
           <>
-            <div className="w-14 h-14 rounded-full bg-surface-alt flex items-center justify-center">
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 text-text-secondary">
+            <div className="w-16 h-16 rounded-2xl bg-surface-alt border border-white/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-accent">
                 <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
               </svg>
             </div>
             <div>
-              <p className="text-text-primary font-semibold text-sm">Tap to choose video</p>
-              <p className="text-text-secondary text-xs mt-1">or drag & drop here</p>
+              <p className="text-white font-bold text-base">Select or drop a video file</p>
+              <p className="text-text-secondary text-xs mt-1">Automated HLS transcoding to 360p, 480p & 720p</p>
             </div>
-            <p className="text-text-secondary text-xs">MP4, MOV, WebM · max {MAX_SIZE_MB} MB</p>
+            <span className="text-text-secondary/60 text-xs font-mono">MP4, MOV, WebM, MKV up to {MAX_SIZE_MB} MB</span>
           </>
         )}
 
@@ -153,27 +150,27 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           ref={fileInputRef}
           id="upload-file-input"
           type="file"
-          accept="video/mp4,video/quicktime,video/webm"
+          accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
           className="sr-only"
           onChange={handleInputChange}
         />
       </div>
 
       {/* Title input */}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="upload-title" className="text-text-secondary text-xs font-medium uppercase tracking-wide">
-          Title
+      <div className="flex flex-col gap-2">
+        <label htmlFor="upload-title" className="text-text-secondary text-xs font-bold uppercase tracking-wider">
+          Video Title
         </label>
         <input
           id="upload-title"
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Enter a title for your video"
+          placeholder="e.g. If Wishes Could Kill 2026 - Part 1"
           maxLength={120}
           className="
-            w-full bg-surface border border-white/10 rounded-xl
-            px-4 py-3 text-text-primary text-sm
+            w-full bg-surface border border-white/10 rounded-2xl
+            px-4 py-3.5 text-white text-sm
             placeholder:text-text-secondary/50
             focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent
             transition-all
@@ -185,38 +182,38 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       {error && (
         <div
           role="alert"
-          className="flex items-start gap-2 bg-danger/10 border border-danger/30 rounded-xl px-4 py-3"
+          className="flex items-start gap-2.5 bg-danger/10 border border-danger/30 rounded-2xl px-4 py-3.5"
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-danger shrink-0 mt-0.5">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-danger shrink-0 mt-0.5">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
           </svg>
           <p className="text-danger text-sm">{error}</p>
         </div>
       )}
 
-      {/* Submit button — min-height 48px */}
+      {/* Submit button */}
       <button
         id="upload-submit-btn"
         type="submit"
         disabled={isSubmitting || !file}
         className="
-          w-full min-h-[48px] px-6 py-3
-          bg-accent hover:bg-accent/80
-          disabled:bg-surface-alt disabled:text-text-secondary disabled:cursor-not-allowed
-          text-white font-semibold text-sm rounded-xl
+          w-full min-h-[50px] px-6 py-3.5
+          bg-gradient-to-r from-accent to-[#B81D24] hover:from-accent-hover hover:to-accent
+          disabled:bg-surface-alt disabled:text-text-secondary disabled:cursor-not-allowed disabled:shadow-none
+          text-white font-bold text-sm md:text-base rounded-2xl shadow-glow-red
           transition-all active:scale-[0.98]
-          flex items-center justify-center gap-2
+          flex items-center justify-center gap-2 border border-white/10
         "
       >
         {isSubmitting ? (
           <>
-            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+            <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            Uploading…
+            Starting Processing…
           </>
-        ) : 'Upload Video'}
+        ) : 'Upload & Start Transcoding'}
       </button>
     </form>
   );
