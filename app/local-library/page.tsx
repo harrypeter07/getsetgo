@@ -30,14 +30,26 @@ export default function LocalLibraryPage() {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll Server Health Status every 4 seconds
+  // Poll Server Health Status every 4 seconds (supports both Laptop & Mobile devices)
   useEffect(() => {
     async function checkStatus() {
       const pingStart = Date.now();
       try {
-        const res = await fetch('http://localhost:4000/status');
-        if (res.ok) {
-          const data = await res.json();
+        let data: any = null;
+
+        // 1. Try local localhost first (if on same laptop)
+        try {
+          const res = await fetch('http://localhost:4000/status');
+          if (res.ok) data = await res.json();
+        } catch {}
+
+        // 2. Mobile phones & remote devices query Vercel API status bridge
+        if (!data) {
+          const res = await fetch('/api/local-server-status');
+          if (res.ok) data = await res.json();
+        }
+
+        if (data && data.connected) {
           const latencyMs = Date.now() - pingStart;
           setServerStatus({
             ...data,

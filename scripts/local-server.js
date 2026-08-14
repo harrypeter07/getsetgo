@@ -1,6 +1,6 @@
 /**
  * 🍿 Shimpli Laptop Local Server with Global Public HTTPS Tunneling
- * Serves C:\ShimpliVideos directly for /local-library
+ * & Real-Time Heartbeat Sync for Mobile & Remote Devices
  */
 
 const http = require('http');
@@ -9,6 +9,7 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const localtunnel = require('localtunnel');
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
 
 const PORT = 4000;
@@ -30,6 +31,11 @@ if (!fs.existsSync(targetFolder)) {
   }
 }
 
+// Supabase setup for live mobile heartbeat sync
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+
 // Temporary directory for generated video thumbnails
 const THUMB_DIR = path.join(os.tmpdir(), 'shimpli_thumbs');
 fs.mkdirSync(THUMB_DIR, { recursive: true });
@@ -38,6 +44,22 @@ console.log(`\n🍿 [Shimpli Laptop Server] Hosting videos from: "${targetFolder
 
 const SUPPORTED_EXTS = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
 let publicBaseUrl = `http://localhost:${PORT}`;
+
+// Send heartbeat to Supabase DB so mobile devices know server is online
+async function sendHeartbeat() {
+  if (!supabase) return;
+  const statusId = '00000000-0000-0000-0000-000000000000';
+  try {
+    await supabase.from('videos').upsert({
+      id: statusId,
+      title: '__LAPTOP_SERVER_STATUS__',
+      status: 'online',
+      master_manifest_url: publicBaseUrl,
+      description: JSON.stringify({ videoCount: localVideos.length, targetFolder }),
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {}
+}
 
 // Helper: Extract cover thumbnail using FFmpeg
 function getOrGenerateThumbnail(filePath) {
@@ -49,16 +71,13 @@ function getOrGenerateThumbnail(filePath) {
       return thumbPath;
     }
 
-    // Extract frame at 2 seconds into video
     const cmd = `ffmpeg -y -ss 00:00:02 -i "${filePath}" -vframes 1 -vf scale=640:-1 -q:v 4 "${thumbPath}"`;
     execSync(cmd, { stdio: 'ignore', timeout: 5000 });
 
     if (fs.existsSync(thumbPath)) {
       return thumbPath;
     }
-  } catch (err) {
-    console.warn(`[Thumbnail Warning] Could not extract cover for "${path.basename(filePath)}"`);
-  }
+  } catch (err) {}
   return null;
 }
 
@@ -240,10 +259,15 @@ server.listen(PORT, async () => {
     console.warn('⚠️ Could not open public tunnel. Falling back to local IP:', tErr.message);
   }
 
+  // Initial heartbeat + 10-second recurring heartbeat
+  await sendHeartbeat();
+  setInterval(sendHeartbeat, 10000);
+
   // Real-Time Folder Watcher
   try {
     fs.watch(targetFolder, { recursive: true }, () => {
       localVideos = scanVideos(targetFolder);
+      sendHeartbeat();
     });
     console.log(`👀 Watching "${targetFolder}" for new video files in real-time...`);
   } catch (wErr) {}
