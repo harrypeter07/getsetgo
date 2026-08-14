@@ -36,9 +36,10 @@ export async function GET(
     const b2KeyPrefix = video.master_manifest_url || ''; // e.g. "videos/{videoId}"
     // Convert "videos/{videoId}" → "/video/{videoId}" (Worker route format)
     const workerPath = b2KeyPrefix.replace(/^videos\//, '/video/');
-    const masterManifestUrl = video.status === 'ready' && streamBase
+    const isDirectStream = video.master_manifest_url?.startsWith('http://') || video.master_manifest_url?.startsWith('https://');
+    const masterManifestUrl = (video.status === 'ready' && streamBase && !isDirectStream)
       ? `${streamBase}${workerPath}/master.m3u8`
-      : video.master_manifest_url; // fallback for processing state
+      : video.master_manifest_url;
 
     const response: VideoResponse = {
       id: video.id,

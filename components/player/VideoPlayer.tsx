@@ -168,9 +168,12 @@ export default function VideoPlayer({
     const video = videoRef.current;
     if (!video || !masterManifestUrl) return;
 
-    if (!Hls.isSupported()) {
+    const isHls = masterManifestUrl.includes('.m3u8');
+    if (!isHls || !Hls.isSupported()) {
       video.src = masterManifestUrl;
       setIsBuffering(false);
+      resumePlaybackIfSaved();
+      video.play().catch(() => {});
       return;
     }
 
