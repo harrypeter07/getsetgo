@@ -5,7 +5,8 @@
  * scripts/transcode.js
  *
  * Transcodes a source video into multi-quality HLS output using FFmpeg.
- * Detects source resolution and ALL audio streams (Hindi, English, Korean, etc.).
+ * Detects source resolution, ALL audio streams (Hindi, English, Korean, etc.),
+ * and extracts ALL subtitle streams into WebVTT HLS tracks.
  *
  * Usage (standalone):
  *   node scripts/transcode.js <inputPath> <outputDir>
@@ -30,9 +31,8 @@ const QUALITY_LADDER = [
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Detects source video dimensions, duration, and all audio streams using ffprobe.
+ * Detects source video dimensions, duration, audio streams, and subtitle streams using ffprobe.
  * @param {string} inputPath
- * @returns {{ width: number, height: number, duration: number, audioStreams: Array<{ index: number, lang: string, title: string }> }}
  */
 async function probeVideo(inputPath) {
   const { stdout } = await execFileAsync('ffprobe', [
@@ -63,16 +63,25 @@ async function probeVideo(inputPath) {
       title: s.tags?.title || s.tags?.handler_name || `Audio ${idx + 1}`,
     }));
 
+  const subtitleStreams = (info.streams || [])
+    .filter((s) => s.codec_type === 'subtitle')
+    .map((s, idx) => ({
+      index: s.index,
+      subIndex: idx,
+      codec: s.codec_name,
+      lang: s.tags?.language || s.tags?.LANG || `sub${idx + 1}`,
+      title: s.tags?.title || s.tags?.handler_name || `Subtitle ${idx + 1}`,
+    }));
+
   if (!width || !height) {
     throw new Error(`Could not determine video dimensions from "${inputPath}"`);
   }
 
-  return { width, height, duration, audioStreams };
+  return { width, height, duration, audioStreams, subtitleStreams };
 }
 
 /**
  * Gets the installed ffmpeg version string.
- * @returns {Promise<string>}
  */
 async function getFfmpegVersion() {
   try {
@@ -86,7 +95,6 @@ async function getFfmpegVersion() {
 
 /**
  * Detects the compute environment (local / ci / cloud).
- * @returns {'local' | 'ci' | 'cloud'}
  */
 function detectEnvironment() {
   if (process.env.CI || process.env.GITHUB_ACTIONS || process.env.CIRCLECI) return 'ci';
@@ -95,14 +103,50 @@ function detectEnvironment() {
 }
 
 /**
- * Transcodes one quality level using FFmpeg.
- * Preserves ALL audio streams (Hindi, English, Korean, etc.) in the source video.
+ * Extracts embedded subtitle streams into WebVTT files.
  * @param {string} inputPath
  * @param {string} outputDir
- * @param {{ label: string, width: number, height: number, bitrateKbps: number, maxrate: number, bufsize: number }} quality
- * @param {Array<{ index: number, audioIndex: number, lang: string, title: string }>} audioStreams
- * @param {boolean} useGPU
- * @returns {Promise<void>}
+ * @param {Array<{ index: number, subIndex: number, lang: string, title: string }>} subtitleStreams
+ */
+async function extractSubtitles(inputPath, outputDir, subtitleStreams = []) {
+  if (!subtitleStreams || subtitleStreams.length === 0) return [];
+
+  const subsDir = path.join(outputDir, 'subs');
+  fs.mkdirSync(subsDir, { recursive: true });
+
+  const subResults = [];
+
+  for (const s of subtitleStreams) {
+    const lang = s.lang || `sub${s.subIndex + 1}`;
+    const vttFilename = `sub_${lang}_${s.subIndex}.vtt`;
+    const vttPath = path.join(subsDir, vttFilename);
+
+    try {
+      await execFileAsync('ffmpeg', [
+        '-y',
+        '-i', inputPath,
+        '-map', `0:${s.index}`,
+        '-c:s', 'webvtt',
+        vttPath,
+      ]);
+      subResults.push({
+        index: s.index,
+        subIndex: s.subIndex,
+        lang: s.lang,
+        title: s.title,
+        vttRelativePath: `subs/${vttFilename}`,
+      });
+      console.log(`[transcode] ✅ Extracted Subtitle [${s.title || s.lang}] -> subs/${vttFilename}`);
+    } catch (err) {
+      console.warn(`[transcode] ⚠️ Could not extract subtitle stream 0:${s.index}:`, err.message);
+    }
+  }
+
+  return subResults;
+}
+
+/**
+ * Transcodes one quality level using FFmpeg.
  */
 function transcodeQuality(inputPath, outputDir, quality, audioStreams = [], useGPU = true) {
   const qualityDir = path.join(outputDir, quality.label);
@@ -199,13 +243,18 @@ function transcodeQuality(inputPath, outputDir, quality, audioStreams = [], useG
 }
 
 /**
- * Writes the HLS master manifest referencing all quality variant playlists and audio tracks.
- * @param {string} outputDir
- * @param {Array<{ label: string, width: number, height: number, bitrateKbps: number }>} qualities
- * @param {Array<{ index: number, audioIndex: number, lang: string, title: string }>} audioStreams
+ * Writes the HLS master manifest referencing quality variants, audio streams, and WebVTT subtitles.
  */
-function writeMasterManifest(outputDir, qualities, audioStreams = []) {
+function writeMasterManifest(outputDir, qualities, audioStreams = [], subtitleResults = []) {
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3'];
+
+  // Add WebVTT subtitle media declarations
+  if (subtitleResults.length > 0) {
+    subtitleResults.forEach((s, i) => {
+      const isDefault = i === 0 ? 'YES' : 'NO';
+      lines.push(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${s.title || s.lang}",DEFAULT=${isDefault},AUTOSELECT=YES,LANGUAGE="${s.lang}",URI="${s.vttRelativePath}"`);
+    });
+  }
 
   // Add audio media declarations if multi-audio
   if (audioStreams.length > 1) {
@@ -218,7 +267,8 @@ function writeMasterManifest(outputDir, qualities, audioStreams = []) {
   for (const q of qualities) {
     const bandwidth = q.bitrateKbps * 1000;
     const audioGroupAttr = audioStreams.length > 1 ? ',AUDIO="audio"' : '';
-    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${q.width}x${q.height},NAME="${q.label}"${audioGroupAttr}`);
+    const subGroupAttr = subtitleResults.length > 0 ? ',SUBTITLES="subs"' : '';
+    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${q.width}x${q.height},NAME="${q.label}"${audioGroupAttr}${subGroupAttr}`);
     lines.push(`${q.label}/playlist.m3u8`);
   }
 
@@ -229,11 +279,6 @@ function writeMasterManifest(outputDir, qualities, audioStreams = []) {
 
 // ─── Main Export ─────────────────────────────────────────────────────────────
 
-/**
- * Transcodes a source video into multi-quality HLS output.
- * @param {string} inputPath - absolute path to source video file
- * @param {string} outputDir - directory to write {quality}/playlist.m3u8 + segments + master.m3u8
- */
 async function transcodeToHLS(inputPath, outputDir) {
   if (!fs.existsSync(inputPath)) {
     throw new Error(`Input file not found: "${inputPath}"`);
@@ -249,7 +294,11 @@ async function transcodeToHLS(inputPath, outputDir) {
 
   console.log(`[transcode] Source: ${sourceInfo.width}x${sourceInfo.height}, duration: ${sourceInfo.duration.toFixed(1)}s`);
   console.log(`[transcode] Audio Streams Found (${sourceInfo.audioStreams.length}):`, sourceInfo.audioStreams);
+  console.log(`[transcode] Subtitle Streams Found (${sourceInfo.subtitleStreams.length}):`, sourceInfo.subtitleStreams);
   console.log(`[transcode] FFmpeg version: ${ffmpegVersion}`);
+
+  // Extract WebVTT subtitles first
+  const subtitleResults = await extractSubtitles(inputPath, outputDir, sourceInfo.subtitleStreams);
 
   const eligibleQualities = [...QUALITY_LADDER];
 
@@ -263,7 +312,7 @@ async function transcodeToHLS(inputPath, outputDir) {
     })
   );
 
-  const masterManifestPath = writeMasterManifest(outputDir, eligibleQualities, sourceInfo.audioStreams);
+  const masterManifestPath = writeMasterManifest(outputDir, eligibleQualities, sourceInfo.audioStreams, subtitleResults);
   console.log(`[transcode] Master manifest written: ${masterManifestPath}`);
 
   const transcodeTimeMs = Date.now() - startTime;

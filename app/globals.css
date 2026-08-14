@@ -47,6 +47,19 @@ h1, h2, h3, h4, .font-heading {
   font-family: 'Outfit', 'Inter', sans-serif;
 }
 
+/* Netflix-style Subtitle / WebVTT Cue Styling */
+::cue {
+  background-color: rgba(0, 0, 0, 0.8) !important;
+  color: #FFFFFF !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 1.15rem !important;
+  font-weight: 600 !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9) !important;
+  border-radius: 6px !important;
+  padding: 4px 10px !important;
+  line-height: 1.4 !important;
+}
+
 /* Custom Netflix-inspired scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -197,15 +197,30 @@ export default function VideoPlayer({
       }
     });
 
-    // Subtitles / Closed Captions
-    hls.on(Events.SUBTITLE_TRACKS_UPDATED, () => {
-      const tracks: SubtitleTrack[] = hls.subtitleTracks.map((t, i) => ({
-        index: i,
-        label: formatSubLabel(t, i),
-        lang: t.lang || '',
-      }));
-      setSubtitleTracks(tracks);
-    });
+    // Subtitles / Closed Captions (HLS + native video textTracks)
+    const updateSubtitleTracks = () => {
+      let tracks: SubtitleTrack[] = [];
+      if (hls.subtitleTracks && hls.subtitleTracks.length > 0) {
+        tracks = hls.subtitleTracks.map((t, i) => ({
+          index: i,
+          label: formatSubLabel(t, i),
+          lang: t.lang || '',
+        }));
+      } else if (video && video.textTracks && video.textTracks.length > 0) {
+        for (let i = 0; i < video.textTracks.length; i++) {
+          const tt = video.textTracks[i];
+          tracks.push({
+            index: i,
+            label: formatSubLabel({ name: tt.label, lang: tt.language }, i),
+            lang: tt.language || '',
+          });
+        }
+      }
+      if (tracks.length > 0) setSubtitleTracks(tracks);
+    };
+
+    hls.on(Events.MANIFEST_PARSED, updateSubtitleTracks);
+    hls.on(Events.SUBTITLE_TRACKS_UPDATED, updateSubtitleTracks);
 
     hls.on(Events.SUBTITLE_TRACK_SWITCH, () => {
       setCurrentSubtitleTrack(hls.subtitleTrack);
