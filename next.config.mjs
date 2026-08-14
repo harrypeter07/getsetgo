@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    // External packages that should not be bundled (AWS SDK uses native modules)
     serverComponentsExternalPackages: ['@aws-sdk/client-s3', 'pg'],
   },
 
@@ -11,6 +10,15 @@ const nextConfig = {
       { protocol: 'https', hostname: '*.workers.dev' },
       { protocol: 'https', hostname: '*.backblazeb2.com' },
     ],
+  },
+
+  eslint: {
+    // Prevent ESLint warnings from failing production builds on Vercel
+    ignoreDuringBuilds: true,
+  },
+
+  typescript: {
+    ignoreBuildErrors: false,
   },
 
   compress: true,

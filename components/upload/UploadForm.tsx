@@ -7,7 +7,6 @@ interface UploadFormProps {
   onJobCreated: (jobId: string) => void;
 }
 
-const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska'];
 const MAX_SIZE_MB = 500;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 

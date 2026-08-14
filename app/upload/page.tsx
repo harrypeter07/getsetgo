@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import type { Metadata } from 'next';
 import UploadForm from '@/components/upload/UploadForm';
 import UploadProgress from '@/components/upload/UploadProgress';
 

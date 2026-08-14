@@ -133,8 +133,10 @@ export default function VideoPlayer({
       setAudioTracks(tracks);
     });
 
-    hls.on(Events.AUDIO_TRACK_SWITCHED, (_, data) => {
-      setCurrentAudioTrack(data.id);
+    hls.on(Events.AUDIO_TRACK_SWITCHED, () => {
+      if (hls.audioTrack >= 0) {
+        setCurrentAudioTrack(hls.audioTrack);
+      }
     });
 
     // Buffering
@@ -229,7 +231,11 @@ export default function VideoPlayer({
   const handlePlayPause = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    v.paused ? v.play() : v.pause();
+    if (v.paused) {
+      v.play();
+    } else {
+      v.pause();
+    }
   }, []);
 
   const handleMuteToggle = useCallback(() => {
@@ -248,7 +254,11 @@ export default function VideoPlayer({
   const handleFullscreen = useCallback(() => {
     const c = containerRef.current;
     if (!c) return;
-    document.fullscreenElement ? document.exitFullscreen() : c.requestFullscreen();
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      c.requestFullscreen();
+    }
   }, []);
 
   const handleSeek = useCallback((percent: number) => {

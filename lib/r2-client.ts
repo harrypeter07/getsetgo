@@ -1,5 +1,4 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { readFileSync } from 'fs';
 import path from 'path';
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!;

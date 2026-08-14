@@ -22,8 +22,7 @@ const uploadSchema = z.object({
 async function runPipeline(
   tmpFilePath: string,
   videoId: string,
-  jobId: string,
-  title: string
+  jobId: string
 ): Promise<void> {
   // Dynamic imports so they don't block the module load
   const { transcodeToHLS } = await import('../../../scripts/transcode.js');
@@ -140,7 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await writeFile(tmpFilePath, buffer);
 
     // Kick off async pipeline — don't await it (don't block HTTP response)
-    runPipeline(tmpFilePath, video.id, job.id, titleParse.data.title).catch((err) => {
+    runPipeline(tmpFilePath, video.id, job.id).catch((err) => {
       console.error('[upload] Unhandled pipeline error:', err);
     });
 
