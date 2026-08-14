@@ -145,11 +145,15 @@ const server = http.createServer((req, res) => {
 
     const mimeType = fileParam.endsWith('.mkv') ? 'video/x-matroska' : 'video/mp4';
 
+    const MAX_CHUNK = 1.5 * 1024 * 1024; // 1.5 MB max per Range response for instant buffering
+
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const requestedEnd = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const end = Math.min(requestedEnd, start + MAX_CHUNK - 1, fileSize - 1);
       const chunksize = (end - start) + 1;
+
       const file = fs.createReadStream(fileParam, { start, end });
 
       res.writeHead(206, {
@@ -157,14 +161,21 @@ const server = http.createServer((req, res) => {
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize,
         'Content-Type': mimeType,
+        'Cache-Control': 'public, max-age=3600',
       });
       file.pipe(res);
     } else {
-      res.writeHead(200, {
-        'Content-Length': fileSize,
+      // Default to initial 1.5MB chunk if no range header sent
+      const end = Math.min(MAX_CHUNK - 1, fileSize - 1);
+      const chunksize = end + 1;
+      res.writeHead(206, {
+        'Content-Range': `bytes 0-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunksize,
         'Content-Type': mimeType,
+        'Cache-Control': 'public, max-age=3600',
       });
-      fs.createReadStream(fileParam).pipe(res);
+      fs.createReadStream(fileParam, { start: 0, end }).pipe(res);
     }
     return;
   }
