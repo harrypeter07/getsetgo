@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 
 interface UploadFormProps {
@@ -8,7 +8,7 @@ interface UploadFormProps {
 }
 
 const DEFAULT_CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB per chunk (fits Vercel 4.5MB limit)
-const CONCURRENCY = 8; // 8 parallel connections for maximum 10MB/s - 40MB/s upload speed
+const CONCURRENCY = 8; // 8 parallel connections for maximum 15MB/s - 45MB/s upload speed
 
 export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -17,6 +17,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [savedChunkCount, setSavedChunkCount] = useState<number>(0);
 
   // Upload progress states
   const [progressPercent, setProgressPercent] = useState(0);
@@ -27,6 +28,30 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelUploadRef = useRef(false);
   const isPausedRef = useRef(false);
+
+  // Check saved progress when file is selected
+  useEffect(() => {
+    if (!file) { setSavedChunkCount(0); return; }
+    const resumeKey = `shimpli_upload_${file.name}_${file.size}`;
+    try {
+      const saved = localStorage.getItem(resumeKey);
+      if (saved) {
+        const arr = JSON.parse(saved);
+        setSavedChunkCount(arr.length || 0);
+      } else {
+        setSavedChunkCount(0);
+      }
+    } catch {
+      setSavedChunkCount(0);
+    }
+  }, [file]);
+
+  const clearSavedProgress = useCallback(() => {
+    if (!file) return;
+    const resumeKey = `shimpli_upload_${file.name}_${file.size}`;
+    try { localStorage.removeItem(resumeKey); } catch {}
+    setSavedChunkCount(0);
+  }, [file]);
 
   const handleFileChange = useCallback((f: File | null) => {
     if (!f) return;
@@ -69,6 +94,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
     setIsUploading(false);
     setProgressPercent(0);
     setStatusMessage('');
+    clearSavedProgress();
     setError('Upload cancelled.');
   };
 
@@ -270,11 +296,25 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             <div>
               <p className="text-white font-bold text-base truncate max-w-sm">{file.name}</p>
               <p className="text-text-secondary text-xs font-mono mt-1">{(file.size / (1024 * 1024)).toFixed(1)} MB</p>
+
+              {/* Saved Progress Indicator */}
+              {savedChunkCount > 0 && !isUploading && (
+                <div className="mt-2 text-xs bg-amber-500/20 text-amber-300 px-3 py-1 rounded-xl border border-amber-500/30 flex items-center gap-2">
+                  <span>🔄 Found saved progress ({savedChunkCount} chunks)</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); clearSavedProgress(); }}
+                    className="text-white hover:underline text-[11px] font-bold"
+                  >
+                    Start Fresh
+                  </button>
+                </div>
+              )}
             </div>
             {!isUploading && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setFile(null); setTitle(''); }}
+                onClick={(e) => { e.stopPropagation(); setFile(null); setTitle(''); clearSavedProgress(); }}
                 className="text-accent hover:text-white text-xs font-semibold underline transition-colors"
               >
                 Choose different file
