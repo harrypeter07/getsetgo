@@ -30,23 +30,28 @@ export default function LocalLibraryPage() {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll Server Health Status every 4 seconds (supports both Laptop & Mobile devices)
+  // Poll Server Health Status every 4 seconds (Optimized for Mobile & Laptop)
   useEffect(() => {
     async function checkStatus() {
       const pingStart = Date.now();
       try {
         let data: any = null;
 
-        // 1. Try local localhost first (if on same laptop)
+        // 1. Query Vercel API status bridge first (fast ~30ms response on mobile)
         try {
-          const res = await fetch('http://localhost:4000/status');
+          const res = await fetch('/api/local-server-status');
           if (res.ok) data = await res.json();
         } catch {}
 
-        // 2. Mobile phones & remote devices query Vercel API status bridge
-        if (!data) {
-          const res = await fetch('/api/local-server-status');
-          if (res.ok) data = await res.json();
+        // 2. Fallback to direct localhost with 400ms timeout
+        if (!data || !data.connected) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 400);
+            const res = await fetch('http://localhost:4000/status', { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (res.ok) data = await res.json();
+          } catch {}
         }
 
         if (data && data.connected) {
@@ -76,9 +81,26 @@ export default function LocalLibraryPage() {
         setIsLoading(true);
         let list: any[] = [];
 
-        // 1. Try local laptop server if on same machine
+        // 1. Query Vercel API status bridge first (instant load on mobile)
         try {
-          const res = await fetch('http://localhost:4000/list');
+          const statusRes = await fetch('/api/local-server-status');
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            if (statusData.connected && Array.isArray(statusData.videos) && statusData.videos.length > 0) {
+              setFolderName('C:\\ShimpliVideos');
+              setVideos(statusData.videos);
+              console.log(`[Local Library] Loaded ${statusData.videos.length} laptop videos via API bridge!`);
+              return;
+            }
+          }
+        } catch {}
+
+        // 2. Try direct localhost if on same machine with 400ms timeout
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 400);
+          const res = await fetch('http://localhost:4000/list', { signal: controller.signal });
+          clearTimeout(timeoutId);
           if (res.ok) list = await res.json();
         } catch {}
 
@@ -91,18 +113,6 @@ export default function LocalLibraryPage() {
             thumbnailUrl: item.thumbnailUrl || `http://localhost:4000/thumbnail?file=${encodeURIComponent(item.filePath)}`,
           }));
           setVideos(items);
-          return;
-        }
-
-        // 2. Mobile devices query Vercel API status bridge to fetch laptop videos
-        const statusRes = await fetch('/api/local-server-status');
-        if (statusRes.ok) {
-          const statusData = await statusRes.json();
-          if (statusData.connected && Array.isArray(statusData.videos) && statusData.videos.length > 0) {
-            setFolderName('C:\\ShimpliVideos (Laptop Connected)');
-            setVideos(statusData.videos);
-            console.log(`[Local Library Mobile] Loaded ${statusData.videos.length} laptop videos via API bridge!`);
-          }
         }
       } catch (err) {
         console.error('[Local Library Error]:', err);
