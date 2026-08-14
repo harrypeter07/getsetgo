@@ -240,7 +240,6 @@ export default function LocalLibraryPage() {
               src={activeVideo.objectUrl}
               poster={activeVideo.thumbnailUrl}
               controls
-              autoPlay
               className="w-full h-full object-contain"
             />
           </div>
