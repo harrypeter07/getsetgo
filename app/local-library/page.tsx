@@ -57,7 +57,7 @@ export default function LocalLibraryPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load laptop videos automatically on mount via Vercel API or local server
+  // Load laptop videos automatically on mount
   useEffect(() => {
     async function loadLaptopVideos() {
       try {
@@ -71,7 +71,7 @@ export default function LocalLibraryPage() {
         } catch {}
 
         if (list && list.length > 0) {
-          setFolderName('C:\\ShimpliVideos (Local Direct)');
+          setFolderName('C:\\ShimpliVideos');
           const items: LocalVideoItem[] = list.map((item: any) => ({
             name: item.fileName || item.title,
             size: item.size || 0,
@@ -79,7 +79,7 @@ export default function LocalLibraryPage() {
             thumbnailUrl: `http://localhost:4000/thumbnail?file=${encodeURIComponent(item.filePath)}`,
           }));
           setVideos(items);
-          setActiveVideo(items[0]);
+          // Do NOT auto-play first video on mount; wait for explicit click
           return;
         }
 
@@ -97,8 +97,8 @@ export default function LocalLibraryPage() {
               thumbnailUrl: v.thumbnail_url,
             }));
             setVideos(items);
-            setActiveVideo(items[0]);
-            console.log(`[Local Library] Loaded ${items.length} laptop videos via Vercel API!`);
+            // Do NOT auto-play first video on mount; wait for explicit click
+            console.log(`[Local Library] Loaded ${items.length} laptop videos!`);
           }
         }
       } catch (err) {
@@ -144,9 +144,8 @@ export default function LocalLibraryPage() {
       }
 
       setVideos(items);
-      if (items.length > 0) {
-        setActiveVideo(items[0]);
-      } else {
+      setActiveVideo(null); // Keep player closed until user clicks card
+      if (items.length === 0) {
         setError(`No supported video files (.mp4, .webm, .mkv, .mov) found in "${dirHandle.name}".`);
       }
     } catch (err: any) {
@@ -231,28 +230,39 @@ export default function LocalLibraryPage() {
         </div>
       )}
 
-      {/* Active Video Player Screen */}
+      {/* Active Video Player Screen (Only displayed when user clicks a video card) */}
       {activeVideo && (
-        <div className="mb-10 bg-surface border border-accent/30 rounded-3xl overflow-hidden shadow-2xl animate-fade-in">
+        <div className="mb-10 bg-surface border border-accent/40 rounded-3xl overflow-hidden shadow-2xl animate-fade-in">
+          <div className="p-4 bg-surface-alt/80 flex items-center justify-between border-b border-white/10">
+            <div className="flex items-center gap-2">
+              <span className="text-accent font-bold text-sm">▶️ Playing:</span>
+              <span className="text-white font-bold text-sm truncate max-w-lg">{activeVideo.name}</span>
+            </div>
+            <button
+              onClick={() => setActiveVideo(null)}
+              className="px-3 py-1 bg-white/10 hover:bg-danger text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+            >
+              <span>✕ Close Player</span>
+            </button>
+          </div>
+
           <div className="aspect-video bg-black relative">
             <video
               key={activeVideo.objectUrl}
               src={activeVideo.objectUrl}
               poster={activeVideo.thumbnailUrl}
               controls
+              autoPlay
               className="w-full h-full object-contain"
             />
           </div>
-          <div className="p-5 flex items-center justify-between bg-surface-alt/60">
-            <div>
-              <h2 className="text-lg font-bold text-white truncate max-w-xl">{activeVideo.name}</h2>
-              <p className="text-text-secondary text-xs font-mono mt-0.5">
-                {activeVideo.size ? `${(activeVideo.size / (1024 * 1024)).toFixed(1)} MB • ` : ''}Laptop Local Stream (1.5MB Tight Adaptive Chunks)
-              </p>
-            </div>
-            <span className="text-emerald-400 text-xs font-bold font-mono bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              Global Laptop Direct Stream
+
+          <div className="p-4 flex items-center justify-between bg-surface-alt/60">
+            <p className="text-text-secondary text-xs font-mono">
+              {activeVideo.size ? `${(activeVideo.size / (1024 * 1024)).toFixed(1)} MB • ` : ''}Laptop Direct Stream (1.5MB Tight Adaptive Chunks)
+            </p>
+            <span className="text-emerald-400 text-xs font-bold font-mono bg-emerald-500/10 px-3 py-1 rounded-xl border border-emerald-500/20">
+              ⚡ 0 ms Latency Direct Stream
             </span>
           </div>
         </div>
@@ -269,9 +279,12 @@ export default function LocalLibraryPage() {
       {/* Video Grid */}
       {videos.length > 0 ? (
         <div>
-          <h3 className="text-white font-bold text-base mb-4 flex items-center gap-2">
-            <span>📁 Videos in Folder:</span>
-            <span className="text-accent font-mono text-sm font-extrabold">{videos.length} Files</span>
+          <h3 className="text-white font-bold text-base mb-4 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <span>📁 Videos in Folder:</span>
+              <span className="text-accent font-mono text-sm font-extrabold">{videos.length} Files</span>
+            </span>
+            <span className="text-xs text-white/50 font-normal">Click any card below to play</span>
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
@@ -284,7 +297,7 @@ export default function LocalLibraryPage() {
                   className={`
                     group p-3 rounded-2xl border cursor-pointer transition-all duration-300 flex flex-col justify-between
                     ${isSelected
-                      ? 'bg-accent/10 border-accent shadow-glow-red scale-[1.02]'
+                      ? 'bg-accent/15 border-accent shadow-glow-red scale-[1.02]'
                       : 'bg-surface border-white/10 hover:border-white/30 hover:bg-surface-alt'
                     }
                   `}
@@ -297,7 +310,6 @@ export default function LocalLibraryPage() {
                         alt={item.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         onError={(e) => {
-                          // Fallback icon if image fails to load
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
@@ -316,8 +328,8 @@ export default function LocalLibraryPage() {
                   <div className="px-1">
                     <h4 className="text-white font-bold text-sm truncate">{item.name}</h4>
                     <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-white/50">
-                      <span>{isSelected ? '▶️ Now Playing' : (item.size ? `${(item.size / (1024 * 1024)).toFixed(1)} MB` : 'Stream')}</span>
-                      <span className="font-mono text-emerald-400 font-bold">1.5MB Chunks</span>
+                      <span>{isSelected ? '▶️ Currently Playing' : (item.size ? `${(item.size / (1024 * 1024)).toFixed(1)} MB` : 'Stream')}</span>
+                      <span className="font-mono text-emerald-400 font-bold">Click to Play</span>
                     </div>
                   </div>
                 </div>
