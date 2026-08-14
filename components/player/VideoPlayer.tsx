@@ -63,6 +63,11 @@ export default function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const hideTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Storage key for saving resume position
+  const storageKey = `shimpli_pos_${encodeURIComponent(masterManifestUrl)}`;
+  const hasResumedRef = useRef(false);
+  const [resumeToast, setResumeToast] = useState<string | null>(null);
+
   // Keep callback ref to prevent HLS destruction on parent re-renders
   const onQualityChangeRef = useRef(onQualityChange);
   useEffect(() => {
@@ -93,6 +98,49 @@ export default function VideoPlayer({
 
   // Playback speed
   const [playbackSpeed,      setPlaybackSpeed]      = useState(1);
+
+  // ── Save & Resume playback position ──────────────────────────────────────
+  const resumePlaybackIfSaved = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || hasResumedRef.current) return;
+    hasResumedRef.current = true;
+
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const savedSec = parseFloat(saved);
+        if (savedSec > 3 && (!video.duration || savedSec < video.duration - 10)) {
+          video.currentTime = savedSec;
+          const mins = Math.floor(savedSec / 60);
+          const secs = Math.floor(savedSec % 60);
+          setResumeToast(`Resumed from ${mins}:${secs.toString().padStart(2, '0')}`);
+          setTimeout(() => setResumeToast(null), 3500);
+        }
+      }
+    } catch {}
+  }, [storageKey]);
+
+  // Save progress periodically to localStorage
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !masterManifestUrl) return;
+
+    const saveProgress = () => {
+      if (video.currentTime > 3 && video.duration && video.currentTime < video.duration - 10) {
+        try {
+          localStorage.setItem(storageKey, Math.floor(video.currentTime).toString());
+        } catch {}
+      }
+    };
+
+    const interval = setInterval(saveProgress, 2000);
+    window.addEventListener('beforeunload', saveProgress);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', saveProgress);
+    };
+  }, [masterManifestUrl, storageKey]);
 
   // ── Auto-hide controls ───────────────────────────────────────────────────
   const scheduleHide = useCallback(() => {
@@ -149,6 +197,10 @@ export default function VideoPlayer({
         levels.map((l, i) => ({ index: i, label: `${l.height}p`, height: l.height }))
       );
       if (dataSaverMode) hls.autoLevelCapping = 0;
+      
+      // Resume playback position if saved in localStorage
+      resumePlaybackIfSaved();
+
       try {
         await video.play();
       } catch (err) {
@@ -249,7 +301,7 @@ export default function VideoPlayer({
       hls.destroy();
       hlsRef.current = null;
     };
-  }, [masterManifestUrl]); // Depend ONLY on masterManifestUrl!
+  }, [masterManifestUrl, resumePlaybackIfSaved]); // Depend ONLY on masterManifestUrl!
 
   // Data saver mode change
   useEffect(() => {
@@ -458,6 +510,16 @@ export default function VideoPlayer({
         playsInline
         preload="metadata"
       />
+
+      {/* Resume Toast Banner */}
+      {resumeToast && (
+        <div className="absolute top-4 left-4 z-30 bg-accent text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-glow-red border border-white/20 animate-fade-in flex items-center gap-2">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+          </svg>
+          <span>{resumeToast}</span>
+        </div>
+      )}
 
       {/* Buffering spinner */}
       {isBuffering && !error && <BufferingSpinner />}
