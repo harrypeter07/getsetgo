@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const job = await createUploadJob(video.id);
 
     const sessionId = `session_${video.id}`;
-    const chunkSize = 10 * 1024 * 1024; // 10MB per chunk
+    const chunkSize = 3 * 1024 * 1024; // 3MB per chunk (fits Vercel serverless limit)
 
     return NextResponse.json({
       sessionId,

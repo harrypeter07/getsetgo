@@ -7,7 +7,7 @@ interface UploadFormProps {
   onJobCreated: (jobId: string) => void;
 }
 
-const CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB chunks
+const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB chunks (fits cleanly under Vercel's 4.5MB limit)
 const CONCURRENCY = 4; // 4 parallel upload workers for max speed
 
 export default function UploadForm({ onJobCreated }: UploadFormProps) {
