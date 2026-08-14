@@ -1,6 +1,6 @@
 /**
- * 🍿 Shimpli Laptop Local Server with Global Public HTTPS Tunneling,
- * Real-Time Telemetry Logs & Automatic FFmpeg Cover Picture / Thumbnail Extraction
+ * 🍿 Shimpli Laptop Local Server with Global Public HTTPS Tunneling
+ * Serves C:\ShimpliVideos directly for /local-library
  */
 
 const http = require('http');
@@ -9,7 +9,6 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const localtunnel = require('localtunnel');
-const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
 
 const PORT = 4000;
@@ -36,11 +35,6 @@ const THUMB_DIR = path.join(os.tmpdir(), 'shimpli_thumbs');
 fs.mkdirSync(THUMB_DIR, { recursive: true });
 
 console.log(`\n🍿 [Shimpli Laptop Server] Hosting videos from: "${targetFolder}"`);
-
-// Supabase setup
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const SUPPORTED_EXTS = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
 let publicBaseUrl = `http://localhost:${PORT}`;
@@ -81,7 +75,6 @@ function scanVideos(dir) {
         } else {
           const ext = path.extname(file).toLowerCase();
           if (SUPPORTED_EXTS.includes(ext)) {
-            // Generate or fetch thumbnail
             const thumbPath = getOrGenerateThumbnail(filePath);
             results.push({
               filePath,
@@ -99,48 +92,7 @@ function scanVideos(dir) {
 }
 
 let localVideos = scanVideos(targetFolder);
-console.log(`✅ Indexed ${localVideos.length} video(s) and generated cover thumbnails!\n`);
-
-const syncedTitles = new Set();
-
-async function syncToSupabase() {
-  if (!supabase) {
-    return;
-  }
-
-  localVideos = scanVideos(targetFolder);
-
-  for (const item of localVideos) {
-    const publicStreamUrl = `${publicBaseUrl}/stream?file=${encodeURIComponent(item.filePath)}`;
-    const publicThumbUrl  = `${publicBaseUrl}/thumbnail?file=${encodeURIComponent(item.filePath)}`;
-
-    try {
-      const { data: existing } = await supabase.from('videos').select('id, master_manifest_url, thumbnail_url').eq('title', item.title).limit(1);
-
-      if (!existing || existing.length === 0) {
-        await supabase.from('videos').insert({
-          title: item.title,
-          status: 'ready',
-          master_manifest_url: publicStreamUrl,
-          thumbnail_url: publicThumbUrl,
-          available_qualities: ['1080p (Laptop Global Direct 🌍)'],
-        });
-        syncedTitles.add(item.title);
-        console.log(`✨ Registered Worldwide Stream + Cover Picture: "${item.title}"`);
-      } else if (existing[0] && (existing[0].master_manifest_url !== publicStreamUrl || !existing[0].thumbnail_url)) {
-        await supabase.from('videos').update({
-          master_manifest_url: publicStreamUrl,
-          thumbnail_url: publicThumbUrl,
-          available_qualities: ['1080p (Laptop Global Direct 🌍)'],
-        }).eq('id', existing[0].id);
-        syncedTitles.add(item.title);
-        console.log(`🔄 Updated Stream URL + Cover Picture: "${item.title}"`);
-      }
-    } catch (err) {
-      console.warn(`Could not sync "${item.title}" to Supabase:`, err.message);
-    }
-  }
-}
+console.log(`✅ Indexed ${localVideos.length} video(s) on your laptop!\n`);
 
 // High-Speed HTTP Server with Cover Thumbnail Serving & Stream Chunking
 const server = http.createServer((req, res) => {
@@ -192,6 +144,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (reqUrl.pathname === '/list') {
+    localVideos = scanVideos(targetFolder);
     const enrichedList = localVideos.map(v => ({
       ...v,
       thumbnailUrl: `${publicBaseUrl}/thumbnail?file=${encodeURIComponent(v.filePath)}`,
@@ -275,7 +228,7 @@ server.listen(PORT, async () => {
 
   // Launch Global Secure HTTPS Public Tunnel
   try {
-    console.log(`🌐 Generating Global Public HTTPS Tunnel for remote users in other cities...`);
+    console.log(`🌐 Generating Global Public HTTPS Tunnel for remote users...`);
     const tunnel = await localtunnel({ port: PORT });
     publicBaseUrl = tunnel.url;
     console.log(`🌍 PUBLIC GLOBAL STREAM URL: ${publicBaseUrl}`);
@@ -287,23 +240,11 @@ server.listen(PORT, async () => {
     console.warn('⚠️ Could not open public tunnel. Falling back to local IP:', tErr.message);
   }
 
-  // Sync to database with public stream URL & Cover Pictures
-  await syncToSupabase();
-
   // Real-Time Folder Watcher
-  let watchTimer = null;
   try {
-    fs.watch(targetFolder, { recursive: true }, (eventType, filename) => {
-      if (filename && SUPPORTED_EXTS.some(ext => filename.toLowerCase().endsWith(ext))) {
-        if (watchTimer) clearTimeout(watchTimer);
-        watchTimer = setTimeout(() => {
-          console.log(`\n🔔 Syncing new/updated video files from "${targetFolder}"...`);
-          syncToSupabase();
-        }, 1500);
-      }
+    fs.watch(targetFolder, { recursive: true }, () => {
+      localVideos = scanVideos(targetFolder);
     });
     console.log(`👀 Watching "${targetFolder}" for new video files in real-time...`);
-  } catch (wErr) {
-    console.warn('Folder watching active in manual refresh mode.');
-  }
+  } catch (wErr) {}
 });

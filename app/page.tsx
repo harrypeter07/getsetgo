@@ -119,9 +119,15 @@ export default async function HomePage() {
     console.error('[HomePage] Failed to load videos:', err);
   }
 
-  // Filter ready videos vs featured
-  const readyVideos = videos.filter(v => v.status === 'ready' || v.master_manifest_url);
-  const featuredVideo = readyVideos[0];
+  // Only display cloud-uploaded & transcoded videos on the Root Home Page
+  const cloudVideos = videos.filter(v =>
+    (v.status === 'ready' || v.master_manifest_url) &&
+    !v.master_manifest_url?.includes('localhost') &&
+    !v.master_manifest_url?.includes('.loca.lt') &&
+    !v.master_manifest_url?.includes('/stream?file=') &&
+    !v.title?.startsWith('WhatsApp Video')
+  );
+  const featuredVideo = cloudVideos[0];
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-10 space-y-10">
@@ -141,7 +147,7 @@ export default async function HomePage() {
               {featuredVideo.title}
             </h1>
 
-            <p className="mt-3 text-text-secondary text-sm md:text-base leading-relaxed line-clamp-2 max-w-2xl">
+            <p className="mt-3 text-[#A1A1AA] text-sm md:text-base leading-relaxed line-clamp-2 max-w-2xl">
               {featuredVideo.description || 'Watch in multi-quality HLS adaptive streaming. Automatically optimizes for 2G, 3G, 4G, or High-speed WiFi.'}
             </p>
 
@@ -161,9 +167,9 @@ export default async function HomePage() {
                 <span>Play Now</span>
               </Link>
 
-              <div className="flex items-center gap-2 text-xs text-text-secondary font-mono bg-white/5 px-3 py-2 rounded-xl border border-white/5">
+              <div className="flex items-center gap-2 text-xs text-[#A1A1AA] font-mono bg-white/5 px-3 py-2 rounded-xl border border-white/5">
                 <span>Qualities:</span>
-                <span className="text-white font-bold">{(featuredVideo.available_qualities || featuredVideo.availableQualities || []).join(', ') || '360p, 480p, 720p'}</span>
+                <span className="text-white font-bold">{(featuredVideo.available_qualities || featuredVideo.availableQualities || []).join(', ') || '360p, 480p, 720p, 1080p'}</span>
               </div>
             </div>
           </div>
@@ -176,7 +182,7 @@ export default async function HomePage() {
           <h1 className="text-white text-3xl md:text-4xl font-extrabold tracking-tight">
             Stream Any Video, <span className="text-accent">Any Speed</span>
           </h1>
-          <p className="mt-3 text-text-secondary text-sm md:text-base max-w-xl mx-auto">
+          <p className="mt-3 text-[#A1A1AA] text-sm md:text-base max-w-xl mx-auto">
             Adaptive bitrate streaming that automatically adjusts quality to your connection bandwidth.
           </p>
         </section>
@@ -193,9 +199,9 @@ export default async function HomePage() {
       <section>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-white text-xl md:text-2xl font-bold tracking-tight flex items-center gap-2">
-            <span>Library Videos</span>
-            <span className="text-xs font-mono font-normal text-text-secondary bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
-              {videos.length} available
+            <span>Cloud Library Videos</span>
+            <span className="text-xs font-mono font-normal text-[#A1A1AA] bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+              {cloudVideos.length} available
             </span>
           </h2>
 
@@ -203,19 +209,19 @@ export default async function HomePage() {
             href="/upload"
             className="text-xs text-accent hover:text-white font-semibold transition-colors flex items-center gap-1"
           >
-            <span>+ Add Video</span>
+            <span>+ Upload Video</span>
           </Link>
         </div>
 
-        {videos.length === 0 && !fetchError ? (
+        {cloudVideos.length === 0 && !fetchError ? (
           <div className="text-center py-20 bg-surface/50 rounded-3xl border border-white/5">
             <div className="w-16 h-16 rounded-2xl bg-surface-alt flex items-center justify-center mx-auto mb-4 border border-white/10">
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-text-secondary/40">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-[#A1A1AA]/40">
                 <path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/>
               </svg>
             </div>
-            <p className="text-white font-bold text-base">No videos uploaded yet</p>
-            <p className="text-text-secondary text-xs mt-1">Upload a video file to begin automated HLS transcoding.</p>
+            <p className="text-white font-bold text-base">No cloud videos uploaded yet</p>
+            <p className="text-[#A1A1AA] text-xs mt-1">Upload a video file to begin automated HLS transcoding.</p>
             <Link
               href="/upload"
               className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-accent hover:bg-accent/80 text-white font-semibold text-xs rounded-xl shadow-glow-red transition-all"
@@ -225,7 +231,7 @@ export default async function HomePage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {videos.map((video) => (
+            {cloudVideos.map((video) => (
               <VideoCard key={video.id} video={video} />
             ))}
           </div>
@@ -233,4 +239,5 @@ export default async function HomePage() {
       </section>
     </div>
   );
+
 }
