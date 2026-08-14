@@ -30,40 +30,25 @@ export default function LocalLibraryPage() {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll Server Health Status every 4 seconds (Optimized for Mobile & Laptop)
+  // Poll Server Status via Vercel API bridge (No local network permission prompts)
   useEffect(() => {
     async function checkStatus() {
       const pingStart = Date.now();
       try {
-        let data: any = null;
-
-        // 1. Query Vercel API status bridge first (fast ~30ms response on mobile)
-        try {
-          const res = await fetch('/api/local-server-status');
-          if (res.ok) data = await res.json();
-        } catch {}
-
-        // 2. Fallback to direct localhost with 400ms timeout
-        if (!data || !data.connected) {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 400);
-            const res = await fetch('http://localhost:4000/status', { signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (res.ok) data = await res.json();
-          } catch {}
+        const res = await fetch('/api/local-server-status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.connected) {
+            const latencyMs = Date.now() - pingStart;
+            setServerStatus({
+              ...data,
+              connected: true,
+              latencyMs,
+            });
+            return;
+          }
         }
-
-        if (data && data.connected) {
-          const latencyMs = Date.now() - pingStart;
-          setServerStatus({
-            ...data,
-            connected: true,
-            latencyMs,
-          });
-        } else {
-          setServerStatus(prev => prev ? { ...prev, connected: false } : null);
-        }
+        setServerStatus(prev => prev ? { ...prev, connected: false } : null);
       } catch {
         setServerStatus(prev => prev ? { ...prev, connected: false } : null);
       }
@@ -74,45 +59,21 @@ export default function LocalLibraryPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load laptop videos automatically on mount
+  // Load laptop videos via Vercel API status bridge
   useEffect(() => {
     async function loadLaptopVideos() {
       try {
         setIsLoading(true);
-        let list: any[] = [];
-
-        // 1. Query Vercel API status bridge first (instant load on mobile)
-        try {
-          const statusRes = await fetch('/api/local-server-status');
-          if (statusRes.ok) {
-            const statusData = await statusRes.json();
-            if (statusData.connected && Array.isArray(statusData.videos) && statusData.videos.length > 0) {
-              setFolderName('C:\\ShimpliVideos');
-              setVideos(statusData.videos);
-              console.log(`[Local Library] Loaded ${statusData.videos.length} laptop videos via API bridge!`);
-              return;
-            }
+        const statusRes = await fetch('/api/local-server-status');
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          if (statusData.connected && Array.isArray(statusData.videos) && statusData.videos.length > 0) {
+            setFolderName(statusData.targetFolder || 'C:\\ShimpliVideos');
+            setVideos(statusData.videos);
+            console.log(`[Local Library] Loaded ${statusData.videos.length} laptop videos via API bridge!`);
+          } else {
+            console.log('[Local Library] Laptop server offline or no videos reported.');
           }
-        } catch {}
-
-        // 2. Try direct localhost if on same machine with 400ms timeout
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 400);
-          const res = await fetch('http://localhost:4000/list', { signal: controller.signal });
-          clearTimeout(timeoutId);
-          if (res.ok) list = await res.json();
-        } catch {}
-
-        if (list && list.length > 0) {
-          setFolderName('C:\\ShimpliVideos');
-          const items: LocalVideoItem[] = list.map((item: any) => ({
-            name: item.fileName || item.name || item.title,
-            size: item.size || 0,
-            objectUrl: item.objectUrl || item.streamUrl || `http://localhost:4000/stream?file=${encodeURIComponent(item.filePath)}`,
-            thumbnailUrl: item.thumbnailUrl || `http://localhost:4000/thumbnail?file=${encodeURIComponent(item.filePath)}`,
-          }));
-          setVideos(items);
         }
       } catch (err) {
         console.error('[Local Library Error]:', err);
