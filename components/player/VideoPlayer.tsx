@@ -107,13 +107,17 @@ export default function VideoPlayer({
     hls.attachMedia(video);
 
     // Quality levels available
-    hls.on(Events.MANIFEST_PARSED, () => {
+    hls.on(Events.MANIFEST_PARSED, async () => {
       const levels = hls.levels;
       setAvailableQualities(
         levels.map((l, i) => ({ index: i, label: `${l.height}p`, height: l.height }))
       );
       if (dataSaverMode) hls.autoLevelCapping = 0;
-      video.play().catch(() => {});
+      try {
+        await video.play();
+      } catch (err) {
+        console.log('[VideoPlayer] Autoplay prevented:', err);
+      }
     });
 
     // Current quality changed by ABR (smooth transition without restarting video)
@@ -212,37 +216,71 @@ export default function VideoPlayer({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
+  // ── Handlers (Async / Await) ───────────────────────────────────────────────
+  const handlePlayPause = useCallback(async () => {
+    const v = videoRef.current;
+    if (!v) return;
+    try {
+      if (v.paused) {
+        await v.play();
+      } else {
+        v.pause();
+      }
+    } catch (err) {
+      console.warn('[VideoPlayer] Play error:', err);
+    }
+  }, []);
+
+  const handleFullscreen = useCallback(async () => {
+    const c = containerRef.current;
+    if (!c) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await c.requestFullscreen();
+      }
+    } catch (err) {
+      console.warn('[VideoPlayer] Fullscreen error:', err);
+    }
+  }, []);
+
+  // Phone Rotate / Landscape Orientation Handler
+  const handleRotateLandscape = useCallback(async () => {
+    const c = containerRef.current;
+    if (!c) return;
+    try {
+      if (!document.fullscreenElement) {
+        await c.requestFullscreen();
+      }
+      if (typeof window !== 'undefined' && window.screen?.orientation && 'lock' in window.screen.orientation) {
+        await (window.screen.orientation as any).lock('landscape').catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[VideoPlayer] Landscape rotate error:', err);
+    }
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = async (e: KeyboardEvent) => {
       if (['INPUT','TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
       const video = videoRef.current;
       if (!video) return;
       switch (e.key) {
-        case ' ': case 'k': e.preventDefault(); if (video.paused) video.play(); else video.pause(); break;
+        case ' ': case 'k': e.preventDefault(); await handlePlayPause(); break;
         case 'ArrowRight':  e.preventDefault(); video.currentTime = Math.min(video.currentTime + 10, video.duration); break;
         case 'ArrowLeft':   e.preventDefault(); video.currentTime = Math.max(video.currentTime - 10, 0); break;
         case 'ArrowUp':     e.preventDefault(); video.volume = Math.min(video.volume + 0.1, 1); break;
         case 'ArrowDown':   e.preventDefault(); video.volume = Math.max(video.volume - 0.1, 0); break;
         case 'm':           video.muted = !video.muted; break;
-        case 'f':           handleFullscreen(); break;
+        case 'f':           await handleFullscreen(); break;
       }
       showControlsNow();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [showControlsNow]);
-
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const handlePlayPause = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) {
-      v.play();
-    } else {
-      v.pause();
-    }
-  }, []);
+  }, [handleFullscreen, handlePlayPause, showControlsNow]);
 
   const handleMuteToggle = useCallback(() => {
     const v = videoRef.current;
@@ -255,16 +293,6 @@ export default function VideoPlayer({
     if (!v) return;
     v.volume = val;
     v.muted  = val === 0;
-  }, []);
-
-  const handleFullscreen = useCallback(() => {
-    const c = containerRef.current;
-    if (!c) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      c.requestFullscreen();
-    }
   }, []);
 
   const handleSeek = useCallback((percent: number) => {
@@ -311,10 +339,10 @@ export default function VideoPlayer({
       onMouseMove={showControlsNow}
       onMouseLeave={() => isPlaying && setShowControls(false)}
       onTouchStart={showControlsNow}
-      onClick={(e) => {
+      onClick={async (e) => {
         // Only toggle play/pause on container click (not on controls)
         if ((e.target as HTMLElement).closest('[data-controls]')) return;
-        handlePlayPause();
+        await handlePlayPause();
         showControlsNow();
       }}
     >
@@ -371,6 +399,7 @@ export default function VideoPlayer({
             onVolumeChange={handleVolumeChange}
             onSeek={handleSeek}
             onFullscreen={handleFullscreen}
+            onRotateLandscape={handleRotateLandscape}
             onSelectQuality={handleSelectQuality}
             onAudioTrackChange={handleAudioTrackChange}
             onSpeedChange={handleSpeedChange}

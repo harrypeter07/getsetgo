@@ -47,11 +47,12 @@ interface ControlsProps {
   currentAudioTrack: number;
   playbackSpeed: number;
   speedOptions: number[];
-  onPlayPause: () => void;
+  onPlayPause: () => Promise<void> | void;
   onMuteToggle: () => void;
   onVolumeChange: (v: number) => void;
   onSeek: (percent: number) => void;
-  onFullscreen: () => void;
+  onFullscreen: () => Promise<void> | void;
+  onRotateLandscape: () => Promise<void> | void;
   onSelectQuality: (index: number | 'auto') => void;
   onAudioTrackChange: (index: number) => void;
   onSpeedChange: (speed: number) => void;
@@ -90,7 +91,7 @@ function SettingsPanel({
 
   return (
     <div
-      className="absolute bottom-16 right-3 w-56 rounded-xl overflow-hidden shadow-2xl border border-white/10 z-30"
+      className="absolute bottom-16 right-3 w-56 rounded-xl overflow-hidden shadow-2xl border border-white/10 z-30 animate-fade-in"
       style={{ background: 'rgba(18,18,18,0.97)', backdropFilter: 'blur(20px)' }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -255,6 +256,7 @@ export default function Controls({
   onVolumeChange,
   onSeek,
   onFullscreen,
+  onRotateLandscape,
   onSelectQuality,
   onAudioTrackChange,
   onSpeedChange,
@@ -316,10 +318,13 @@ export default function Controls({
         {/* ── Control row ──────────────────────────────────────────── */}
         <div className="flex items-center h-14 px-3 gap-1">
 
-          {/* Play / Pause */}
+          {/* Async Play / Pause */}
           <button
             id="player-play-pause"
-            onClick={(e) => { e.stopPropagation(); onPlayPause(); }}
+            onClick={async (e) => {
+              e.stopPropagation();
+              await onPlayPause();
+            }}
             aria-label={isPlaying ? 'Pause' : 'Play'}
             className="w-11 h-11 flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform"
           >
@@ -376,6 +381,22 @@ export default function Controls({
           {/* Spacer */}
           <div className="flex-1" />
 
+          {/* Rotate / Phone Orientation Button */}
+          <button
+            id="player-rotate-btn"
+            onClick={async (e) => {
+              e.stopPropagation();
+              await onRotateLandscape();
+            }}
+            aria-label="Rotate to landscape phone view"
+            title="Rotate to Landscape"
+            className="w-10 h-10 flex items-center justify-center text-white/70 hover:text-white hover:scale-110 active:scale-90 transition-all md:hidden"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path d="M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h1.5c-.47-4.66-3.32-8.58-7.29-10.3l1.82-1.82L17.07-2l-4.24 4.24 4.24 4.24 1.41-1.41-1.99-2.55zM7.52 21.48c-3.27-1.55-5.61-4.72-5.97-8.48h-1.5c.47 4.66 3.32 8.58 7.29 10.3l-1.82 1.82 1.41 1.41 4.24-4.24-4.24-4.24-1.41 1.41 1.99 2.55zM6 8h12v8H6V8z"/>
+            </svg>
+          </button>
+
           {/* Settings (gear) */}
           <button
             id="player-settings-btn"
@@ -389,10 +410,13 @@ export default function Controls({
             </svg>
           </button>
 
-          {/* Fullscreen */}
+          {/* Async Fullscreen */}
           <button
             id="player-fullscreen-btn"
-            onClick={(e) => { e.stopPropagation(); onFullscreen(); }}
+            onClick={async (e) => {
+              e.stopPropagation();
+              await onFullscreen();
+            }}
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             className="w-10 h-10 flex items-center justify-center text-white/70 hover:text-white hover:scale-110 active:scale-90 transition-all"
           >
