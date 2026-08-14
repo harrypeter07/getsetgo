@@ -181,6 +181,8 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
     setStatusMessage(`⚡ ${concurrency}x ${isUltraSpeed ? '🔥 ULTRA SPEED' : 'Rapid'} Workers Uploading...`);
 
+    const transferLogs: { time: number; size: number }[] = [];
+
     // Helper worker to upload individual chunk using high-speed ArrayBuffer
     const uploadSingleChunk = async (chunkIndex: number): Promise<void> => {
       if (cancelUploadRef.current) return;
@@ -217,15 +219,21 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             const pct = Math.round((completedChunks.size / totalChunks) * 100);
             setProgressPercent(pct);
 
-            // Calculate live MB/s speed & ETA
-            const elapsedSec = (Date.now() - startTime) / 1000;
-            if (elapsedSec > 0.2 && !isPausedRef.current) {
-              const speedBytesPerSec = uploadedBytesTotal / elapsedSec;
-              const mbps = (speedBytesPerSec / (1024 * 1024)).toFixed(1);
+            // Rolling 3-second live speed calculation (never decays artificially)
+            const now = Date.now();
+            transferLogs.push({ time: now, size: chunkBlob.size });
+            while (transferLogs.length > 0 && now - transferLogs[0].time > 3000) {
+              transferLogs.shift();
+            }
+            if (transferLogs.length > 1 && !isPausedRef.current) {
+              const windowDurationSec = (now - transferLogs[0].time) / 1000;
+              const windowBytesTotal  = transferLogs.reduce((sum, item) => sum + item.size, 0);
+              const liveSpeedBytesPerSec = windowBytesTotal / Math.max(windowDurationSec, 0.5);
+              const mbps = (liveSpeedBytesPerSec / (1024 * 1024)).toFixed(1);
               setUploadSpeedMbps(parseFloat(mbps));
 
               const remainingBytes = selectedFile.size - uploadedBytesTotal;
-              const etaSec = Math.round(remainingBytes / speedBytesPerSec);
+              const etaSec = Math.round(remainingBytes / liveSpeedBytesPerSec);
               setEtaSeconds(Math.max(0, etaSec));
             }
             return;
