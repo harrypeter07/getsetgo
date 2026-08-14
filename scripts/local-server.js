@@ -1,28 +1,37 @@
 /**
- * Shimpli Local Laptop Video Server Agent
- * Run this on your laptop to instantly host and stream any folder of videos directly to your website!
+ * 🍿 Shimpli Local Laptop Video Server Agent (Zero-Upload High-Speed Streaming Engine)
  *
- * Usage:
- *   node scripts/local-server.js "C:\Users\YourName\Videos"
- *   OR:
- *   node scripts/local-server.js "D:\Movies"
+ * Automatically watches a folder on your laptop (e.g. C:\ShimpliVideos or D:\Movies)
+ * and streams videos directly to your website with ZERO upload wait time!
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
 
 const PORT = 4000;
-const targetFolder = process.argv[2] || process.cwd();
+let targetFolder = process.argv[2];
 
-if (!fs.existsSync(targetFolder)) {
-  console.error(`❌ Folder does not exist: "${targetFolder}"`);
-  process.exit(1);
+// Default to C:\ShimpliVideos or ~/Movies if not specified
+if (!targetFolder) {
+  targetFolder = process.platform === 'win32'
+    ? path.join('C:', 'ShimpliVideos')
+    : path.join(os.homedir(), 'Movies', 'ShimpliVideos');
 }
 
-console.log(`\n🍿 [Shimpli Local Server] Indexing videos in: "${targetFolder}"`);
+if (!fs.existsSync(targetFolder)) {
+  try {
+    fs.mkdirSync(targetFolder, { recursive: true });
+    console.log(`📁 Created dedicated local media folder: "${targetFolder}"`);
+  } catch (err) {
+    targetFolder = process.cwd();
+  }
+}
+
+console.log(`\n🍿 [Shimpli Local Server] Hosting videos from: "${targetFolder}"`);
 
 // Supabase setup
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -33,29 +42,33 @@ const SUPPORTED_EXTS = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
 
 function scanVideos(dir) {
   let results = [];
-  const list = fs.readdirSync(dir);
-  list.forEach((file) => {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-    if (stat && stat.isDirectory()) {
-      results = results.concat(scanVideos(filePath));
-    } else {
-      const ext = path.extname(file).toLowerCase();
-      if (SUPPORTED_EXTS.includes(ext)) {
-        results.push({
-          filePath,
-          fileName: file,
-          title: path.basename(file, ext).replace(/[._-]/g, ' '),
-          size: stat.size,
-        });
-      }
-    }
-  });
+  try {
+    const list = fs.readdirSync(dir);
+    list.forEach((file) => {
+      const filePath = path.join(dir, file);
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat && stat.isDirectory()) {
+          results = results.concat(scanVideos(filePath));
+        } else {
+          const ext = path.extname(file).toLowerCase();
+          if (SUPPORTED_EXTS.includes(ext)) {
+            results.push({
+              filePath,
+              fileName: file,
+              title: path.basename(file, ext).replace(/[._-]/g, ' '),
+              size: stat.size,
+            });
+          }
+        }
+      } catch (e) {}
+    });
+  } catch (e) {}
   return results;
 }
 
-const localVideos = scanVideos(targetFolder);
-console.log(`✅ Found ${localVideos.length} video(s) in folder!\n`);
+let localVideos = scanVideos(targetFolder);
+console.log(`✅ Indexed ${localVideos.length} video(s) on your laptop!\n`);
 
 // Register local videos with Supabase DB so website displays them
 async function syncToSupabase() {
@@ -63,6 +76,8 @@ async function syncToSupabase() {
     console.warn('⚠️ Supabase credentials missing in .env.local. Running in local standalone mode.');
     return;
   }
+
+  localVideos = scanVideos(targetFolder);
 
   for (const item of localVideos) {
     const localStreamUrl = `http://localhost:${PORT}/stream?file=${encodeURIComponent(item.filePath)}`;
@@ -73,7 +88,7 @@ async function syncToSupabase() {
           title: item.title,
           status: 'ready',
           master_manifest_url: localStreamUrl,
-          available_qualities: ['1080p (Local Laptop Direct)'],
+          available_qualities: ['1080p (Laptop Direct ⚡)'],
         });
         console.log(`✨ Registered on Website: "${item.title}"`);
       }
@@ -84,6 +99,19 @@ async function syncToSupabase() {
 }
 
 syncToSupabase();
+
+// Real-Time Folder Watcher for instant auto-adding new files
+try {
+  fs.watch(targetFolder, { recursive: true }, (eventType, filename) => {
+    if (filename && SUPPORTED_EXTS.some(ext => filename.toLowerCase().endsWith(ext))) {
+      console.log(`\n🔔 New video detected in folder: "${filename}"! Syncing to website...`);
+      setTimeout(syncToSupabase, 1000);
+    }
+  });
+  console.log(`👀 Watching "${targetFolder}" for new video files in real-time...`);
+} catch (wErr) {
+  console.warn('Folder watching active in manual refresh mode.');
+}
 
 // High-Speed HTTP Server with Range Requests (Partial Content) for instant video seeking
 const server = http.createServer((req, res) => {
@@ -118,6 +146,8 @@ const server = http.createServer((req, res) => {
     const fileSize = stat.size;
     const range = req.headers.range;
 
+    const mimeType = fileParam.endsWith('.mkv') ? 'video/x-matroska' : 'video/mp4';
+
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
@@ -129,13 +159,13 @@ const server = http.createServer((req, res) => {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize,
-        'Content-Type': 'video/mp4',
+        'Content-Type': mimeType,
       });
       file.pipe(res);
     } else {
       res.writeHead(200, {
         'Content-Length': fileSize,
-        'Content-Type': 'video/mp4',
+        'Content-Type': mimeType,
       });
       fs.createReadStream(fileParam).pipe(res);
     }
@@ -150,8 +180,8 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n🚀 [Shimpli Local Server Ready!]`);
+  console.log(`\n🚀 [Shimpli Laptop Local Server Ready!]`);
   console.log(`🔗 Local Stream Base: http://localhost:${PORT}`);
-  console.log(`📂 Videos indexed: ${localVideos.length}`);
-  console.log(`💡 Keep this terminal open while watching local videos on your website!\n`);
+  console.log(`📁 Videos Folder: "${targetFolder}"`);
+  console.log(`💡 Drop any video file into "${targetFolder}" to instantly show it on your website!\n`);
 });
