@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: WatchPageProps): Promise<Meta
     const video = await getVideoById(params.id);
     if (!video) return { title: 'Video Not Found' };
     return {
-      title: `${video.title} — Netchinga Stream`,
+      title: `${video.title} — GetSetGo Stream`,
       description: video.description ?? `Watch "${video.title}" in adaptive quality HLS.`,
       openGraph: {
         title: video.title,

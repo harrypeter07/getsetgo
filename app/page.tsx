@@ -4,7 +4,7 @@ import { listVideos } from '@/lib/supabase-client';
 import type { Video } from '@/lib/types';
 
 export const metadata: Metadata = {
-  title: 'Browse Videos — Netchinga',
+  title: 'Browse Videos — GetSetGo',
   description: 'Watch videos adaptively streamed for any connection speed.',
 };
 

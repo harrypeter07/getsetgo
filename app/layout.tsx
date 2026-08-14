@@ -4,8 +4,8 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Netchinga — Adaptive HD Video Streaming',
-    template: '%s | Netchinga',
+    default: 'GetSetGo — Adaptive HD Video Streaming',
+    template: '%s | GetSetGo',
   },
   description: 'Ultra-fast adaptive bitrate streaming platform. Automatically transcoded for low-bandwidth 2G to 4K speeds.',
   icons: {
@@ -30,7 +30,7 @@ export default function RootLayout({
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
       </head>
       <body className="min-h-screen flex flex-col bg-background selection:bg-accent selection:text-white">
-        {/* Glassmorphic Netflix-style Header */}
+        {/* Glassmorphic Header */}
         <header className="sticky top-0 z-50 glass-nav transition-all duration-300">
           <nav className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-4">
             
@@ -40,14 +40,14 @@ export default function RootLayout({
               id="nav-home"
               className="flex items-center gap-2.5 group transition-transform duration-200 hover:scale-[1.02]"
             >
-              {/* Custom N emblem */}
+              {/* Custom G emblem */}
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-accent to-[#B81D24] flex items-center justify-center text-white text-xs font-black shadow-glow-red border border-white/20">
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                   <path d="M8 5v14l11-7z"/>
                 </svg>
               </div>
               <span className="font-heading font-extrabold text-lg md:text-xl tracking-tight text-white group-hover:text-accent transition-colors">
-                NETCHINGA
+                GETSETGO
               </span>
             </Link>
 
@@ -97,7 +97,7 @@ export default function RootLayout({
               <span className="text-white/20">•</span>
               <span>HLS Adaptive Bitrate (AMD GPU Accelerated)</span>
             </div>
-            <p className="text-white/40">© {new Date().getFullYear()} Netchinga — Premium Low-Bandwidth Video Streaming</p>
+            <p className="text-white/40">© {new Date().getFullYear()} GetSetGo — Premium Low-Bandwidth Video Streaming</p>
           </div>
         </footer>
       </body>
