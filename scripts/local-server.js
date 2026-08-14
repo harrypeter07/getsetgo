@@ -104,6 +104,7 @@ function scanVideos(dir) {
 // ─── SUPABASE HEARTBEAT ───────────────────────────────────────────────────────
 async function sendHeartbeat() {
   if (!supabase) return;
+  const now = new Date().toISOString();
   const videoList = localVideos.map(v => ({
     name        : v.fileName,
     size        : v.size,
@@ -111,18 +112,21 @@ async function sendHeartbeat() {
     thumbnailUrl: `${publicBaseUrl}/thumbnail?file=${encodeURIComponent(v.filePath)}`,
   }));
 
+  const payload = JSON.stringify({
+    videoCount     : localVideos.length,
+    targetFolder,
+    videos         : videoList,
+    serverTimestamp: now,   // <-- store timestamp in payload (not relying on DB created_at)
+  });
+
   try {
     await supabase.from('videos').upsert({
       id                 : '00000000-0000-0000-0000-000000000000',
       title              : '__LAPTOP_SERVER_STATUS__',
       status             : 'online',
       master_manifest_url: publicBaseUrl,
-      description        : JSON.stringify({
-        videoCount  : localVideos.length,
-        targetFolder,
-        videos      : videoList,
-      }),
-      created_at: new Date().toISOString(),
+      description        : payload,
+      created_at         : now,
     });
     process.stdout.write(`💓 Heartbeat sent — ${localVideos.length} videos @ ${publicBaseUrl}\r`);
   } catch (err) {
