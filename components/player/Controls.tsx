@@ -88,11 +88,12 @@ function SettingsPanel({
   onClose: () => void;
 }) {
   const sortedQualities = [...availableQualities].sort((a, b) => b.height - a.height);
+  const activeAudioLabel = audioTracks[currentAudioTrack]?.label ?? 'Default Audio';
 
   return (
     <div
-      className="absolute bottom-16 right-3 w-56 rounded-xl overflow-hidden shadow-2xl border border-white/10 z-30 animate-fade-in"
-      style={{ background: 'rgba(18,18,18,0.97)', backdropFilter: 'blur(20px)' }}
+      className="absolute bottom-16 right-3 w-60 rounded-2xl overflow-hidden shadow-2xl border border-white/10 z-30 animate-fade-in"
+      style={{ background: 'rgba(18,18,22,0.97)', backdropFilter: 'blur(24px)' }}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Main menu */}
@@ -118,6 +119,26 @@ function SettingsPanel({
             </button>
           </li>
 
+          {/* Audio & Language Tracks */}
+          <li>
+            <button
+              id="settings-audio"
+              onClick={() => setView('audio')}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm text-white hover:bg-white/10 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm0 14H4V4h16v12zM6 12h8v2H6zm0-3h12v2H6zm0-3h12v2H6z"/>
+                </svg>
+                <span>Audio & Language</span>
+              </div>
+              <div className="flex items-center gap-2 text-gray-400 text-xs max-w-[100px] truncate">
+                <span className="truncate">{activeAudioLabel}</span>
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 shrink-0"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+              </div>
+            </button>
+          </li>
+
           {/* Playback speed */}
           <li>
             <button
@@ -137,28 +158,6 @@ function SettingsPanel({
               </div>
             </button>
           </li>
-
-          {/* Audio track */}
-          {audioTracks.length > 0 && (
-            <li>
-              <button
-                id="settings-audio"
-                onClick={() => setView('audio')}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm text-white hover:bg-white/10 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
-                  </svg>
-                  <span>Audio</span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-400 text-xs">
-                  <span>{audioTracks[currentAudioTrack]?.label ?? 'Default'}</span>
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
-                </div>
-              </button>
-            </li>
-          )}
         </ul>
       )}
 
@@ -190,6 +189,31 @@ function SettingsPanel({
         </>
       )}
 
+      {/* Audio & Language sub-menu */}
+      {view === 'audio' && (
+        <>
+          <button onClick={() => setView('main')} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-400 hover:text-white border-b border-white/10 transition-colors">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+            Audio & Language
+          </button>
+          <ul className="py-2 max-h-60 overflow-y-auto">
+            {audioTracks.length === 0 ? (
+              <li className="px-4 py-3 text-xs text-gray-400">Default Audio Track</li>
+            ) : (
+              audioTracks.map((t) => (
+                <li key={t.index}>
+                  <button id={`audio-${t.index}`} onClick={() => { onAudioTrackChange(t.index); onClose(); }}
+                    className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${currentAudioTrack === t.index ? 'text-red-500 font-semibold' : 'text-white hover:bg-white/10'}`}>
+                    <span>{t.label}</span>
+                    {currentAudioTrack === t.index && <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </>
+      )}
+
       {/* Speed sub-menu */}
       {view === 'speed' && (
         <>
@@ -204,27 +228,6 @@ function SettingsPanel({
                   className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${playbackSpeed === s ? 'text-red-500 font-semibold' : 'text-white hover:bg-white/10'}`}>
                   <span>{s === 1 ? 'Normal' : `${s}×`}</span>
                   {playbackSpeed === s && <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {/* Audio sub-menu */}
-      {view === 'audio' && (
-        <>
-          <button onClick={() => setView('main')} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-400 hover:text-white border-b border-white/10 transition-colors">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
-            Audio Track
-          </button>
-          <ul className="py-2">
-            {audioTracks.map((t) => (
-              <li key={t.index}>
-                <button id={`audio-${t.index}`} onClick={() => { onAudioTrackChange(t.index); onClose(); }}
-                  className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${currentAudioTrack === t.index ? 'text-red-500 font-semibold' : 'text-white hover:bg-white/10'}`}>
-                  <span>{t.label}</span>
-                  {currentAudioTrack === t.index && <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>}
                 </button>
               </li>
             ))}
@@ -271,6 +274,12 @@ export default function Controls({
     e.stopPropagation();
     setShowSettings((v) => !v);
     setSettingsView('main');
+  }, []);
+
+  const openAudioMenu = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowSettings(true);
+    setSettingsView('audio');
   }, []);
 
   const closeSettings = useCallback(() => {
@@ -381,6 +390,19 @@ export default function Controls({
           {/* Spacer */}
           <div className="flex-1" />
 
+          {/* 1-Tap Audio & Language Button */}
+          <button
+            id="player-audio-lang-btn"
+            onClick={openAudioMenu}
+            aria-label="Audio and Language settings"
+            title="Audio & Language"
+            className="w-10 h-10 flex items-center justify-center text-white/70 hover:text-white hover:scale-110 active:scale-90 transition-all"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm0 14H4V4h16v12zM6 12h8v2H6zm0-3h12v2H6zm0-3h12v2H6z"/>
+            </svg>
+          </button>
+
           {/* Rotate / Phone Orientation Button */}
           <button
             id="player-rotate-btn"
@@ -406,7 +428,7 @@ export default function Controls({
             style={{ transition: 'color 0.2s, transform 0.3s' }}
           >
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.6-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.6.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.47.47 0 0 0-.12.61l1.92 3.32a.49.49 0 0 0 .6.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96a.49.49 0 0 0 .6-.22l1.92-3.32a.47.47 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.6-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.6.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.47.47 0 0 0-.12.61l1.92 3.32a.49.49 0 0 0 .6.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96a.49.49 0 0 0 .6-.22l1.92-3.32a.47.47 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6-3.6z"/>
             </svg>
           </button>
 

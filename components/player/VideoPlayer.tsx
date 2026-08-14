@@ -17,6 +17,33 @@ export interface AudioTrack   { index: number; label: string; lang: string; }
 
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
+// Language code map for human-readable labels
+const LANG_MAP: Record<string, string> = {
+  eng: 'English',
+  en:  'English',
+  hin: 'Hindi',
+  hi:  'Hindi',
+  kor: 'Korean',
+  ko:  'Korean',
+  spa: 'Spanish',
+  es:  'Spanish',
+  fre: 'French',
+  fr:  'French',
+  ger: 'German',
+  de:  'German',
+  jpn: 'Japanese',
+  ja:  'Japanese',
+  zho: 'Chinese',
+  zh:  'Chinese',
+};
+
+function formatAudioLabel(track: { name?: string; lang?: string }, index: number): string {
+  const langKey = track.lang?.toLowerCase() ?? '';
+  const langName = LANG_MAP[langKey] ?? track.name ?? track.lang;
+  if (langName) return `${langName} (Audio ${index + 1})`;
+  return `Audio Track ${index + 1}`;
+}
+
 export default function VideoPlayer({
   masterManifestUrl,
   poster,
@@ -90,8 +117,7 @@ export default function VideoPlayer({
     }
 
     const hlsConfig: Partial<HlsConfig> = {
-      // Automatic ABR mode with smooth quality transition
-      startLevel: -1, // -1 = Automatic ABR estimate
+      startLevel: -1,
       abrEwmaDefaultEstimate: 1_000_000,
       maxBufferLength: 30,
       maxMaxBufferLength: 60,
@@ -130,11 +156,11 @@ export default function VideoPlayer({
       }
     });
 
-    // Audio tracks
+    // Audio tracks / Languages
     hls.on(Events.AUDIO_TRACKS_UPDATED, () => {
       const tracks: AudioTrack[] = hls.audioTracks.map((t, i) => ({
         index: i,
-        label: t.name || t.lang || `Track ${i + 1}`,
+        label: formatAudioLabel(t, i),
         lang: t.lang || '',
       }));
       setAudioTracks(tracks);
@@ -321,6 +347,7 @@ export default function VideoPlayer({
     const hls = hlsRef.current;
     if (!hls) return;
     hls.audioTrack = index;
+    setCurrentAudioTrack(index);
   }, []);
 
   const handleSpeedChange = useCallback((speed: number) => {
