@@ -166,15 +166,30 @@ export default function VideoPlayer({
       }
     });
 
-    // Audio tracks / Languages
-    hls.on(Events.AUDIO_TRACKS_UPDATED, () => {
-      const tracks: AudioTrack[] = hls.audioTracks.map((t, i) => ({
-        index: i,
-        label: formatAudioLabel(t, i),
-        lang: t.lang || '',
-      }));
-      setAudioTracks(tracks);
-    });
+    // Audio tracks / Languages (HLS + native video audioTracks)
+    const updateAudioTracks = () => {
+      let tracks: AudioTrack[] = [];
+      if (hls.audioTracks && hls.audioTracks.length > 0) {
+        tracks = hls.audioTracks.map((t, i) => ({
+          index: i,
+          label: formatAudioLabel(t, i),
+          lang: t.lang || '',
+        }));
+      } else if (video && (video as any).audioTracks) {
+        const vTracks = (video as any).audioTracks;
+        for (let i = 0; i < vTracks.length; i++) {
+          tracks.push({
+            index: i,
+            label: formatAudioLabel({ name: vTracks[i].label, lang: vTracks[i].language }, i),
+            lang: vTracks[i].language || '',
+          });
+        }
+      }
+      if (tracks.length > 0) setAudioTracks(tracks);
+    };
+
+    hls.on(Events.MANIFEST_PARSED, updateAudioTracks);
+    hls.on(Events.AUDIO_TRACKS_UPDATED, updateAudioTracks);
 
     hls.on(Events.AUDIO_TRACK_SWITCHED, () => {
       if (hls.audioTrack >= 0) {

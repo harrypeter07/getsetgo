@@ -5,7 +5,7 @@
  * scripts/transcode.js
  *
  * Transcodes a source video into multi-quality HLS output using FFmpeg.
- * Detects source resolution first; only generates renditions <= source resolution.
+ * Detects source resolution and ALL audio streams (Hindi, English, Korean, etc.).
  *
  * Usage (standalone):
  *   node scripts/transcode.js <inputPath> <outputDir>
@@ -30,9 +30,9 @@ const QUALITY_LADDER = [
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Detects source video dimensions and duration using ffprobe.
+ * Detects source video dimensions, duration, and all audio streams using ffprobe.
  * @param {string} inputPath
- * @returns {{ width: number, height: number, duration: number }}
+ * @returns {{ width: number, height: number, duration: number, audioStreams: Array<{ index: number, lang: string, title: string }> }}
  */
 async function probeVideo(inputPath) {
   const { stdout } = await execFileAsync('ffprobe', [
@@ -54,11 +54,20 @@ async function probeVideo(inputPath) {
   const height = videoStream.height;
   const duration = parseFloat(info.format?.duration ?? '0');
 
+  const audioStreams = (info.streams || [])
+    .filter((s) => s.codec_type === 'audio')
+    .map((s, idx) => ({
+      index: s.index,
+      audioIndex: idx,
+      lang: s.tags?.language || s.tags?.LANG || 'und',
+      title: s.tags?.title || s.tags?.handler_name || `Audio ${idx + 1}`,
+    }));
+
   if (!width || !height) {
     throw new Error(`Could not determine video dimensions from "${inputPath}"`);
   }
 
-  return { width, height, duration };
+  return { width, height, duration, audioStreams };
 }
 
 /**
@@ -87,28 +96,39 @@ function detectEnvironment() {
 
 /**
  * Transcodes one quality level using FFmpeg.
+ * Preserves ALL audio streams (Hindi, English, Korean, etc.) in the source video.
  * @param {string} inputPath
  * @param {string} outputDir
  * @param {{ label: string, width: number, height: number, bitrateKbps: number, maxrate: number, bufsize: number }} quality
+ * @param {Array<{ index: number, audioIndex: number, lang: string, title: string }>} audioStreams
+ * @param {boolean} useGPU
  * @returns {Promise<void>}
  */
-function transcodeQuality(inputPath, outputDir, quality, useGPU = true) {
+function transcodeQuality(inputPath, outputDir, quality, audioStreams = [], useGPU = true) {
   const qualityDir = path.join(outputDir, quality.label);
   fs.mkdirSync(qualityDir, { recursive: true });
 
   const segmentFilename = path.join(qualityDir, 'seg_%03d.ts');
   const playlistPath = path.join(qualityDir, 'playlist.m3u8');
 
+  // Build audio mapping args dynamically for all audio streams
+  const audioMapArgs = [];
+  if (audioStreams.length > 0) {
+    audioStreams.forEach((a, i) => {
+      audioMapArgs.push('-map', `0:${a.index}`);
+      audioMapArgs.push(`-c:a:${i}`, 'aac', `-ar:${i}`, '48000', `-b:a:${i}`, '128k');
+    });
+  } else {
+    audioMapArgs.push('-map', '0:a?');
+    audioMapArgs.push('-c:a', 'aac', '-ar', '48000', '-b:a', '128k');
+  }
+
   // ── AMD AMF GPU args (h264_amf) ───────────────────────────────────────────
-  // 10-15x faster than CPU libx264. Uses AMD Radeon GPU.
   const gpuArgs = [
     '-i', inputPath,
-    '-map', '0:v:0',             // video stream
-    '-map', '0:a:1',             // English audio (stream 1) — skip Hindi (stream 0)
+    '-map', '0:v:0',
+    ...audioMapArgs,
     '-vf', `scale=w=-2:h=${quality.height}`,
-    '-c:a', 'aac',
-    '-ar', '48000',
-    '-b:a', '128k',
     '-c:v', 'h264_amf',
     '-quality', 'speed',
     '-rc', '1',
@@ -125,12 +145,9 @@ function transcodeQuality(inputPath, outputDir, quality, useGPU = true) {
   // ── CPU fallback args (libx264) ────────────────────────────────────────────
   const cpuArgs = [
     '-i', inputPath,
-    '-map', '0:v:0',             // video stream
-    '-map', '0:a:1',             // English audio (stream 1)
+    '-map', '0:v:0',
+    ...audioMapArgs,
     '-vf', `scale=w=-2:h=${quality.height}`,
-    '-c:a', 'aac',
-    '-ar', '48000',
-    '-b:a', '128k',
     '-c:v', 'h264',
     '-profile:v', 'high',
     '-pix_fmt', 'yuv420p',
@@ -152,13 +169,12 @@ function transcodeQuality(inputPath, outputDir, quality, useGPU = true) {
   const encoderName = useGPU ? 'h264_amf (GPU)' : 'libx264 (CPU)';
 
   return new Promise((resolve, reject) => {
-    console.log(`[transcode] [${quality.label}] Using ${encoderName}`);
+    console.log(`[transcode] [${quality.label}] Using ${encoderName} with ${audioStreams.length} audio track(s)`);
     const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
 
     let stderr = '';
     proc.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
-      // Print progress lines (contain "time=")
       const lines = chunk.toString().split('\r');
       const progressLine = lines.find(l => l.includes('time=') && l.includes('speed='));
       if (progressLine) process.stdout.write(`\r[${quality.label}] ${progressLine.trim().slice(0, 80)}`);
@@ -167,10 +183,9 @@ function transcodeQuality(inputPath, outputDir, quality, useGPU = true) {
     proc.on('close', (code) => {
       process.stdout.write('\n');
       if (code !== 0) {
-        // If GPU failed, retry with CPU automatically
         if (useGPU && (stderr.includes('Cannot load') || stderr.includes('Error') || stderr.includes('failed'))) {
           console.warn(`[transcode] [${quality.label}] GPU encoder failed, falling back to CPU...`);
-          transcodeQuality(inputPath, outputDir, quality, false).then(resolve).catch(reject);
+          transcodeQuality(inputPath, outputDir, quality, audioStreams, false).then(resolve).catch(reject);
         } else {
           reject(new Error(`FFmpeg exited ${code} for ${quality.label}:\n${stderr.slice(-500)}`));
         }
@@ -184,16 +199,26 @@ function transcodeQuality(inputPath, outputDir, quality, useGPU = true) {
 }
 
 /**
- * Writes the HLS master manifest referencing all quality variant playlists.
+ * Writes the HLS master manifest referencing all quality variant playlists and audio tracks.
  * @param {string} outputDir
  * @param {Array<{ label: string, width: number, height: number, bitrateKbps: number }>} qualities
+ * @param {Array<{ index: number, audioIndex: number, lang: string, title: string }>} audioStreams
  */
-function writeMasterManifest(outputDir, qualities) {
+function writeMasterManifest(outputDir, qualities, audioStreams = []) {
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3'];
 
+  // Add audio media declarations if multi-audio
+  if (audioStreams.length > 1) {
+    audioStreams.forEach((a, i) => {
+      const isDefault = i === 0 ? 'YES' : 'NO';
+      lines.push(`#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="${a.title || a.lang}",DEFAULT=${isDefault},AUTOSELECT=YES,LANGUAGE="${a.lang}",URI="${qualities[0].label}/playlist.m3u8"`);
+    });
+  }
+
   for (const q of qualities) {
-    const bandwidth = q.bitrateKbps * 1000; // in bps
-    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${q.width}x${q.height},NAME="${q.label}"`);
+    const bandwidth = q.bitrateKbps * 1000;
+    const audioGroupAttr = audioStreams.length > 1 ? ',AUDIO="audio"' : '';
+    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${q.width}x${q.height},NAME="${q.label}"${audioGroupAttr}`);
     lines.push(`${q.label}/playlist.m3u8`);
   }
 
@@ -208,16 +233,6 @@ function writeMasterManifest(outputDir, qualities) {
  * Transcodes a source video into multi-quality HLS output.
  * @param {string} inputPath - absolute path to source video file
  * @param {string} outputDir - directory to write {quality}/playlist.m3u8 + segments + master.m3u8
- * @returns {Promise<{
- *   qualities: Array<{ label: string, width: number, height: number, bitrateKbps: number }>,
- *   masterManifestPath: string,
- *   durationSeconds: number,
- *   ffmpegVersion: string,
- *   transcodeTimeMs: number,
- *   hostname: string,
- *   nodeVersion: string,
- *   environment: 'local' | 'ci' | 'cloud'
- * }>}
  */
 async function transcodeToHLS(inputPath, outputDir) {
   if (!fs.existsSync(inputPath)) {
@@ -233,25 +248,22 @@ async function transcodeToHLS(inputPath, outputDir) {
   ]);
 
   console.log(`[transcode] Source: ${sourceInfo.width}x${sourceInfo.height}, duration: ${sourceInfo.duration.toFixed(1)}s`);
+  console.log(`[transcode] Audio Streams Found (${sourceInfo.audioStreams.length}):`, sourceInfo.audioStreams);
   console.log(`[transcode] FFmpeg version: ${ffmpegVersion}`);
 
-  // Use all qualities in the ladder (height filter disabled — user controls ladder)
   const eligibleQualities = [...QUALITY_LADDER];
 
   console.log(`[transcode] Generating ${eligibleQualities.length} qualities IN PARALLEL: ${eligibleQualities.map((q) => q.label).join(', ')}`);
-  console.log(`[transcode] Using preset: veryfast (5x faster than default)`);
 
-  // ── Encode ALL qualities simultaneously ──────────────────────────────────
-  // Parallel encoding uses all CPU cores across qualities for maximum speed.
   await Promise.all(
     eligibleQualities.map(async (quality) => {
       console.log(`[transcode] ⚡ Started: ${quality.label}`);
-      await transcodeQuality(inputPath, outputDir, quality);
+      await transcodeQuality(inputPath, outputDir, quality, sourceInfo.audioStreams);
       console.log(`[transcode] ✅ Done:    ${quality.label}`);
     })
   );
 
-  const masterManifestPath = writeMasterManifest(outputDir, eligibleQualities);
+  const masterManifestPath = writeMasterManifest(outputDir, eligibleQualities, sourceInfo.audioStreams);
   console.log(`[transcode] Master manifest written: ${masterManifestPath}`);
 
   const transcodeTimeMs = Date.now() - startTime;

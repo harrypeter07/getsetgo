@@ -229,12 +229,15 @@ function SettingsPanel({
           </button>
           <ul className="py-2 max-h-60 overflow-y-auto">
             {audioTracks.length === 0 ? (
-              <li className="px-4 py-3 text-xs text-gray-400">Default Audio Track</li>
+              <li className="px-4 py-3 text-sm text-red-500 font-semibold flex items-center justify-between bg-white/5">
+                <span>Default Audio (Original)</span>
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              </li>
             ) : (
               audioTracks.map((t) => (
                 <li key={t.index}>
                   <button id={`audio-${t.index}`} onClick={() => { onAudioTrackChange(t.index); onClose(); }}
-                    className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${currentAudioTrack === t.index ? 'text-red-500 font-semibold' : 'text-white hover:bg-white/10'}`}>
+                    className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${currentAudioTrack === t.index ? 'text-red-500 font-semibold bg-white/5' : 'text-white hover:bg-white/10'}`}>
                     <span>{t.label}</span>
                     {currentAudioTrack === t.index && <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>}
                   </button>
