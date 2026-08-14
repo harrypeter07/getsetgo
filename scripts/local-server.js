@@ -13,13 +13,13 @@
  */
 
 const http      = require('http');
-const https     = require('https');
 const fs        = require('fs');
 const path      = require('path');
 const os        = require('os');
 const { execSync, spawn } = require('child_process');
 const { createClient }    = require('@supabase/supabase-js');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
+
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const PORT           = 4000;
@@ -139,7 +139,12 @@ function getCloudflareBinaryPath() {
 
 async function downloadCloudflared() {
   const binPath = getCloudflareBinaryPath();
-  if (fs.existsSync(binPath)) return binPath;
+  const MIN_SIZE = 10 * 1024 * 1024; // 10 MB minimum valid binary size
+
+  // Return cached binary if it exists and is large enough
+  if (fs.existsSync(binPath) && fs.statSync(binPath).size > MIN_SIZE) {
+    return binPath;
+  }
 
   fs.mkdirSync(path.dirname(binPath), { recursive: true });
 
@@ -155,31 +160,47 @@ async function downloadCloudflared() {
     downloadUrl = `https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}`;
   }
 
-  console.log(`⬇️  Downloading cloudflared from GitHub...`);
-  console.log(`   URL: ${downloadUrl}`);
+  console.log(`⬇️  Downloading cloudflared (~30MB) from GitHub...`);
 
-  await new Promise((resolve, reject) => {
-    function follow(url, depth = 0) {
-      if (depth > 5) return reject(new Error('Too many redirects'));
-      const mod = url.startsWith('https') ? https : http;
-      mod.get(url, { headers: { 'User-Agent': 'shimpli-media-server/1.0' } }, res => {
-        if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
-          return follow(res.headers.location, depth + 1);
-        }
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-        const out = fs.createWriteStream(binPath);
-        res.pipe(out);
-        out.on('finish', () => out.close(resolve));
-        out.on('error', reject);
-      }).on('error', reject);
+  try {
+    if (platform === 'win32') {
+      // Use PowerShell Invoke-WebRequest — handles GitHub → S3 redirects natively
+      execSync(
+        `powershell -NoProfile -Command "Invoke-WebRequest -Uri '${downloadUrl}' -OutFile '${binPath}' -UseBasicParsing"`,
+        { stdio: 'inherit', timeout: 180_000 }
+      );
+    } else {
+      // Use curl.exe on macOS/Linux
+      execSync(
+        `curl -L --output "${binPath}" "${downloadUrl}"`,
+        { stdio: 'inherit', timeout: 180_000 }
+      );
     }
-    follow(downloadUrl);
-  });
+  } catch (downloadErr) {
+    // Last resort: try curl.exe (real binary, not PS alias) on Windows
+    if (platform === 'win32') {
+      try {
+        execSync(
+          `curl.exe -L --output "${binPath}" "${downloadUrl}"`,
+          { stdio: 'inherit', timeout: 180_000 }
+        );
+      } catch {
+        throw downloadErr;
+      }
+    } else {
+      throw downloadErr;
+    }
+  }
+
+  if (!fs.existsSync(binPath) || fs.statSync(binPath).size < MIN_SIZE) {
+    throw new Error('cloudflared binary download failed or is incomplete');
+  }
 
   if (platform !== 'win32') {
     try { fs.chmodSync(binPath, 0o755); } catch {}
   }
-  console.log(`✅ cloudflared downloaded to: ${binPath}`);
+
+  console.log(`✅ cloudflared ready: ${binPath} (${(fs.statSync(binPath).size / 1e6).toFixed(1)} MB)`);
   return binPath;
 }
 
