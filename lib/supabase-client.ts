@@ -72,7 +72,10 @@ export async function listVideos(limit = 20): Promise<Video[]> {
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error) throw new Error(`Failed to list videos: ${error.message}`);
+  if (error) {
+    console.error('[supabase-client] listVideos error:', error);
+    throw new Error(`Failed to list videos: ${error.message} (code: ${error.code})`);
+  }
   return (data ?? []) as Video[];
 }
 
