@@ -6,7 +6,7 @@ import Link from 'next/link';
 interface LocalVideoItem {
   name: string;
   size: number;
-  file: File;
+  file?: File;
   objectUrl: string;
 }
 
@@ -15,7 +15,38 @@ export default function LocalLibraryPage() {
   const [activeVideo, setActiveVideo] = useState<LocalVideoItem | null>(null);
   const [folderName, setFolderName] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isNodeServerActive, setIsNodeServerActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-connect to Laptop Local Node Server (http://localhost:4000) on mount
+  useEffect(() => {
+    async function checkLocalServer() {
+      try {
+        setIsLoading(true);
+        const res = await fetch('http://localhost:4000/list');
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list) && list.length > 0) {
+            setIsNodeServerActive(true);
+            setFolderName('C:\\ShimpliVideos');
+            const items: LocalVideoItem[] = list.map((item: any) => ({
+              name: item.fileName || item.title,
+              size: item.size || 0,
+              objectUrl: `http://localhost:4000/stream?file=${encodeURIComponent(item.filePath)}`,
+            }));
+            setVideos(items);
+            setActiveVideo(items[0]);
+            console.log(`[Local Library] Connected to Laptop Server! Loaded ${items.length} videos.`);
+          }
+        }
+      } catch (err) {
+        console.log('[Local Library] Standalone mode. Use directory picker or launch node scripts/local-server.js.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    checkLocalServer();
+  }, []);
 
   const handlePickDirectory = async () => {
     try {
@@ -29,6 +60,7 @@ export default function LocalLibraryPage() {
       // @ts-ignore
       const dirHandle = await window.showDirectoryPicker();
       setFolderName(dirHandle.name);
+      setIsNodeServerActive(false);
 
       const items: LocalVideoItem[] = [];
       const SUPPORTED_EXTS = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
@@ -72,18 +104,18 @@ export default function LocalLibraryPage() {
         <div>
           <div className="flex items-center gap-3">
             <Link href="/" className="text-accent hover:underline text-xs font-bold uppercase tracking-wider">
-              ← Back to Platform
+              ← Back to Home
             </Link>
             <span className="text-white/30">•</span>
             <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
-              ⚡ Instant 0-Upload Local Streaming Engine
+              {isNodeServerActive ? '🟢 Connected to Laptop Server (C:\\ShimpliVideos)' : '⚡ Instant 0-Upload Local Streaming'}
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white mt-2">
-            💻 Local Hard Drive Video Library
+            💻 Laptop Media Library
           </h1>
           <p className="text-text-secondary text-sm mt-1">
-            Pick any folder on your laptop hard drive to stream videos instantly with zero upload wait & zero bandwidth usage!
+            Videos stream directly from your laptop hard drive with 0 upload wait & zero bandwidth usage!
           </p>
         </div>
 
@@ -99,13 +131,13 @@ export default function LocalLibraryPage() {
           <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
             <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>
           </svg>
-          {folderName ? `📁 Change Folder (${folderName})` : '📁 Select Folder on My Laptop'}
+          {folderName ? `📁 Active Folder (${folderName})` : '📁 Select Folder on My Laptop'}
         </button>
       </div>
 
       {/* Active Video Player Screen */}
       {activeVideo && (
-        <div className="mb-10 bg-surface border border-accent/30 rounded-3xl overflow-hidden shadow-2xl">
+        <div className="mb-10 bg-surface border border-accent/30 rounded-3xl overflow-hidden shadow-2xl animate-fade-in">
           <div className="aspect-video bg-black relative">
             <video
               key={activeVideo.objectUrl}
@@ -119,12 +151,12 @@ export default function LocalLibraryPage() {
             <div>
               <h2 className="text-lg font-bold text-white truncate max-w-xl">{activeVideo.name}</h2>
               <p className="text-text-secondary text-xs font-mono mt-0.5">
-                {(activeVideo.size / (1024 * 1024)).toFixed(1)} MB • Laptop Local File Stream
+                {(activeVideo.size / (1024 * 1024)).toFixed(1)} MB • Laptop Local SSD Direct Stream
               </p>
             </div>
             <span className="text-emerald-400 text-xs font-bold font-mono bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              Direct NVMe/SSD Hardware Playback
+              Direct NVMe/SSD Hardware Playback (0 ms latency)
             </span>
           </div>
         </div>
@@ -192,9 +224,9 @@ export default function LocalLibraryPage() {
                 <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>
               </svg>
             </div>
-            <h3 className="text-white font-bold text-lg">No Folder Selected Yet</h3>
+            <h3 className="text-white font-bold text-lg">No Videos in Folder Yet</h3>
             <p className="text-text-secondary text-sm max-w-md mx-auto mt-1">
-              Click the button above to pick any video folder on your laptop hard drive and start instant streaming!
+              Drop any video file into <code>C:\ShimpliVideos</code> or click the button above to pick a folder!
             </p>
           </div>
         )
