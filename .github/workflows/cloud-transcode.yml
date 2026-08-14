@@ -1,0 +1,44 @@
+name: Cloud Video Transcoder (100% Cloud Processing)
+
+on:
+  repository_dispatch:
+    types: [cloud_transcode]
+  workflow_dispatch:
+    inputs:
+      videoId:
+        description: 'Video ID to transcode'
+        required: true
+      rawKey:
+        description: 'Raw video object key in B2'
+        required: true
+
+jobs:
+  transcode:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: Run Cloud Transcoder
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+          VIDEO_ID: ${{ github.event.client_payload.videoId || github.event.inputs.videoId }}
+          RAW_KEY: ${{ github.event.client_payload.rawKey || github.event.inputs.rawKey }}
+        run: node scripts/cloud-worker.js

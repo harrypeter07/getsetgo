@@ -1,42 +1,37 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 
 interface UploadFormProps {
   onJobCreated: (jobId: string) => void;
 }
 
-const MAX_SIZE_MB = 500;
-const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB chunks
+const CONCURRENCY = 4; // 4 parallel upload workers for max speed
 
 export default function UploadForm({ onJobCreated }: UploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const validateFile = useCallback((f: File): string | null => {
-    if (f.size > MAX_SIZE_BYTES) {
-      return `File size is ${(f.size / 1024 / 1024).toFixed(0)} MB. Maximum supported upload is ${MAX_SIZE_MB} MB.`;
-    }
-    return null;
-  }, []);
+  // Upload progress states
+  const [progressPercent, setProgressPercent] = useState(0);
+  const [uploadSpeedMbps, setUploadSpeedMbps] = useState(0);
+  const [etaSeconds, setEtaSeconds] = useState(0);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cancelUploadRef = useRef(false);
 
   const handleFileChange = useCallback((f: File | null) => {
     if (!f) return;
-    const err = validateFile(f);
-    if (err) {
-      setError(err);
-      setFile(null);
-    } else {
-      setError(null);
-      setFile(f);
-      if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''));
-    }
-  }, [validateFile, title]);
+    setError(null);
+    setFile(f);
+    if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''));
+  }, [title]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     handleFileChange(e.target.files?.[0] ?? null);
@@ -55,30 +50,147 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
 
   const handleDragLeave = () => setIsDragging(false);
 
+  // ── Parallel Resumable Chunk Uploader ──────────────────────────────────────
+  const uploadFileInParallelChunks = async (selectedFile: File, videoTitle: string) => {
+    setIsUploading(true);
+    setError(null);
+    setProgressPercent(0);
+    cancelUploadRef.current = false;
+
+    const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
+    const resumeKey = `shimpli_upload_${selectedFile.name}_${selectedFile.size}`;
+
+    // Load completed chunk indices from localStorage for resumption
+    let completedChunks = new Set<number>();
+    try {
+      const saved = localStorage.getItem(resumeKey);
+      if (saved) {
+        completedChunks = new Set(JSON.parse(saved));
+        console.log(`[Upload] Resuming upload! ${completedChunks.size}/${totalChunks} chunks already completed.`);
+      }
+    } catch {}
+
+    // 1. Initialize upload session on server
+    setStatusMessage('Initializing upload session...');
+    const initRes = await fetch('/api/upload/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: videoTitle.trim(),
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        totalChunks,
+      }),
+    });
+
+    const initData = await initRes.json();
+    if (!initRes.ok) throw new Error(initData.error || 'Initialization failed');
+
+    const { videoId, jobId } = initData;
+
+    // Track speed and bandwidth
+    const startTime = Date.now();
+    let uploadedBytesTotal = completedChunks.size * CHUNK_SIZE;
+
+    // 2. Build worker task queue for remaining chunks
+    const chunkIndicesToUpload: number[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      if (!completedChunks.has(i)) {
+        chunkIndicesToUpload.push(i);
+      }
+    }
+
+    setStatusMessage(`Uploading in parallel (${CONCURRENCY} connections)...`);
+
+    // Helper worker to upload individual chunk
+    const uploadSingleChunk = async (chunkIndex: number): Promise<void> => {
+      if (cancelUploadRef.current) return;
+
+      const startByte = chunkIndex * CHUNK_SIZE;
+      const endByte   = Math.min(startByte + CHUNK_SIZE, selectedFile.size);
+      const chunkBlob = selectedFile.slice(startByte, endByte);
+
+      const formData = new FormData();
+      formData.append('videoId', videoId);
+      formData.append('chunkIndex', chunkIndex.toString());
+      formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`);
+
+      let attempts = 3;
+      while (attempts > 0) {
+        try {
+          const res = await fetch('/api/upload/chunk', { method: 'POST', body: formData });
+          if (res.ok) {
+            completedChunks.add(chunkIndex);
+            // Save completed progress to localStorage
+            try { localStorage.setItem(resumeKey, JSON.stringify(Array.from(completedChunks))); } catch {}
+
+            uploadedBytesTotal += chunkBlob.size;
+            const pct = Math.round((completedChunks.size / totalChunks) * 100);
+            setProgressPercent(pct);
+
+            // Calculate live MB/s and ETA
+            const elapsedSec = (Date.now() - startTime) / 1000;
+            if (elapsedSec > 0.5) {
+              const speedBytesPerSec = uploadedBytesTotal / elapsedSec;
+              const mbps = (speedBytesPerSec / (1024 * 1024)).toFixed(1);
+              setUploadSpeedMbps(parseFloat(mbps));
+
+              const remainingBytes = selectedFile.size - uploadedBytesTotal;
+              const etaSec = Math.round(remainingBytes / speedBytesPerSec);
+              setEtaSeconds(Math.max(0, etaSec));
+            }
+            return;
+          }
+        } catch (e) {
+          attempts--;
+          if (attempts === 0) throw e;
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+    };
+
+    // 3. Run worker pool with max CONCURRENCY connections
+    let index = 0;
+    const workerPool = Array(CONCURRENCY).fill(0).map(async () => {
+      while (index < chunkIndicesToUpload.length && !cancelUploadRef.current) {
+        const chunkIndex = chunkIndicesToUpload[index++];
+        await uploadSingleChunk(chunkIndex);
+      }
+    });
+
+    await Promise.all(workerPool);
+
+    if (cancelUploadRef.current) {
+      throw new Error('Upload cancelled');
+    }
+
+    // Clear resume storage after completion
+    try { localStorage.removeItem(resumeKey); } catch {}
+
+    // 4. Send upload completion trigger to server
+    setStatusMessage('Chunks assembled! Dispatching 100% Cloud Transcoder...');
+    const completeRes = await fetch('/api/upload/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, jobId, totalChunks }),
+    });
+
+    const completeData = await completeRes.json();
+    if (!completeRes.ok) throw new Error(completeData.error || 'Failed to complete upload');
+
+    onJobCreated(jobId);
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!file) { setError('Please select a video file.'); return; }
-    if (!title.trim()) { setError('Please enter a title.'); return; }
-
-    setIsSubmitting(true);
-    setError(null);
+    if (!title.trim()) { setError('Please enter a video title.'); return; }
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('title', title.trim());
-
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error ?? `Upload failed with status ${res.status}`);
-      }
-
-      onJobCreated(data.jobId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
-      setIsSubmitting(false);
+      await uploadFileInParallelChunks(file, title.trim());
+    } catch (err: any) {
+      setError(err.message || 'Upload failed. Please try again.');
+      setIsUploading(false);
     }
   };
 
@@ -94,8 +206,8 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
         role="button"
         tabIndex={0}
         aria-label="Upload video file"
-        onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+        onClick={() => !isUploading && fileInputRef.current?.click()}
+        onKeyDown={(e) => e.key === 'Enter' && !isUploading && fileInputRef.current?.click()}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -120,15 +232,17 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             </div>
             <div>
               <p className="text-white font-bold text-base truncate max-w-sm">{file.name}</p>
-              <p className="text-text-secondary text-xs font-mono mt-1">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+              <p className="text-text-secondary text-xs font-mono mt-1">{(file.size / (1024 * 1024)).toFixed(1)} MB</p>
             </div>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setFile(null); setTitle(''); }}
-              className="text-accent hover:text-white text-xs font-semibold underline transition-colors"
-            >
-              Choose different file
-            </button>
+            {!isUploading && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setFile(null); setTitle(''); }}
+                className="text-accent hover:text-white text-xs font-semibold underline transition-colors"
+              >
+                Choose different file
+              </button>
+            )}
           </>
         ) : (
           <>
@@ -139,9 +253,9 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             </div>
             <div>
               <p className="text-white font-bold text-base">Select or drop a video file</p>
-              <p className="text-text-secondary text-xs mt-1">Automated HLS transcoding to 360p, 480p & 720p</p>
+              <p className="text-text-secondary text-xs mt-1">100% Cloud HLS Transcoding • Multi-Audio & Subtitles</p>
             </div>
-            <span className="text-text-secondary/60 text-xs font-mono">MP4, MOV, WebM, MKV up to {MAX_SIZE_MB} MB</span>
+            <span className="text-text-secondary/60 text-xs font-mono">Supports 2GB+ files (Parallel Resumable Upload)</span>
           </>
         )}
 
@@ -151,6 +265,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           type="file"
           accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
           className="sr-only"
+          disabled={isUploading}
           onChange={handleInputChange}
         />
       </div>
@@ -164,6 +279,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           id="upload-title"
           type="text"
           value={title}
+          disabled={isUploading}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. If Wishes Could Kill 2026 - Part 1"
           maxLength={120}
@@ -172,10 +288,33 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
             px-4 py-3.5 text-white text-sm
             placeholder:text-text-secondary/50
             focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent
-            transition-all
+            transition-all disabled:opacity-50
           "
         />
       </div>
+
+      {/* Progress & Speed Bar */}
+      {isUploading && (
+        <div className="flex flex-col gap-2.5 bg-surface-alt/70 border border-white/10 rounded-2xl p-4 animate-fade-in">
+          <div className="flex items-center justify-between text-xs text-white">
+            <span className="font-semibold">{statusMessage}</span>
+            <span className="font-mono text-accent font-bold">{progressPercent}%</span>
+          </div>
+
+          {/* Bar */}
+          <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-gradient-to-r from-accent to-red-500 h-full rounded-full transition-all duration-300 shadow-glow-red"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-text-secondary font-mono">
+            <span>🚀 Speed: <strong className="text-white">{uploadSpeedMbps} MB/s</strong></span>
+            <span>⏳ ETA: <strong className="text-white">{etaSeconds}s</strong></span>
+          </div>
+        </div>
+      )}
 
       {/* Error message */}
       {error && (
@@ -194,7 +333,7 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
       <button
         id="upload-submit-btn"
         type="submit"
-        disabled={isSubmitting || !file}
+        disabled={isUploading || !file}
         className="
           w-full min-h-[50px] px-6 py-3.5
           bg-gradient-to-r from-accent to-[#B81D24] hover:from-accent-hover hover:to-accent
@@ -204,15 +343,15 @@ export default function UploadForm({ onJobCreated }: UploadFormProps) {
           flex items-center justify-center gap-2 border border-white/10
         "
       >
-        {isSubmitting ? (
+        {isUploading ? (
           <>
             <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            Starting Processing…
+            Uploading in Parallel… ({progressPercent}%)
           </>
-        ) : 'Upload & Start Transcoding'}
+        ) : 'Upload & Cloud Transcode'}
       </button>
     </form>
   );

@@ -46,8 +46,8 @@ export default function WatchClient({ video, allVideos = [] }: WatchClientProps)
       {/* Player Frame with subtle red ambient shadow */}
       <div className="w-full md:rounded-3xl overflow-hidden shadow-2xl bg-black border border-white/10 relative">
         <VideoPlayer
-          masterManifestUrl={video.masterManifestUrl}
-          poster={video.thumbnailUrl}
+          masterManifestUrl={video.masterManifestUrl || video.master_manifest_url || ''}
+          poster={video.thumbnailUrl || video.thumbnail_url || undefined}
           dataSaverMode={dataSaverMode}
           onQualityChange={handleQualityChange}
         />
@@ -85,10 +85,10 @@ export default function WatchClient({ video, allVideos = [] }: WatchClientProps)
               </span>
 
               {/* Qualities list */}
-              {video.availableQualities.length > 0 && (
+              {(video.availableQualities || video.available_qualities || []).length > 0 && (
                 <div className="flex items-center gap-1">
                   <span className="text-white/40">Available:</span>
-                  {video.availableQualities.map(q => (
+                  {(video.availableQualities || video.available_qualities || []).map((q: string) => (
                     <span key={q} className="bg-white/5 px-2 py-0.5 rounded text-[11px] font-mono text-white/80 border border-white/5">
                       {q}
                     </span>
@@ -189,7 +189,7 @@ export default function WatchClient({ video, allVideos = [] }: WatchClientProps)
                       {item.title}
                     </h4>
                     <span className="text-[11px] text-text-secondary mt-1 block">
-                      {item.available_qualities.join(', ') || 'Ready'}
+                      {(item.available_qualities || item.availableQualities || []).join(', ') || 'Ready'}
                     </span>
                   </div>
                 </Link>

@@ -139,7 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await writeFile(tmpFilePath, buffer);
 
     // Kick off async pipeline — don't await it (don't block HTTP response)
-    runPipeline(tmpFilePath, video.id, job.id).catch((err) => {
+    runPipeline(tmpFilePath, video.id, job.id || '').catch((err) => {
       console.error('[upload] Unhandled pipeline error:', err);
     });
 

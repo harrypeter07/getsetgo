@@ -19,9 +19,12 @@ const STAGE_LABELS: Record<string, string> = {
 // Approximate progress breakpoints per stage (for visual continuity)
 const STAGE_PROGRESS: Record<JobStatus, number> = {
   queued:      5,
+  processing:  30,
   transcoding: 60,
   uploading:   90,
+  ready:       100,
   done:        100,
+  failed:      100,
   error:       100,
 };
 
@@ -50,11 +53,16 @@ export default function UploadProgress({ jobId }: UploadProgressProps) {
         throw new Error(data.error ?? `Status check failed (${res.status})`);
       }
       const data: UploadStatusResponse = await res.json();
-      setStatus(data.status);
-      setProgress(data.progressPercent ?? STAGE_PROGRESS[data.status] ?? 0);
-      if (data.videoId) setVideoId(data.videoId);
-      if (data.errorMessage) setErrorMessage(data.errorMessage);
-      return data.status;
+      const jobStatus = data.status ?? data.job?.status ?? 'queued';
+      const pct = data.progressPercent ?? data.job?.progressPercent ?? STAGE_PROGRESS[jobStatus] ?? 0;
+      const vId = data.videoId ?? data.job?.videoId ?? data.job?.video_id;
+      const errMsg = data.errorMessage ?? data.job?.errorMessage ?? data.job?.error_message;
+
+      setStatus(jobStatus);
+      setProgress(pct);
+      if (vId) setVideoId(vId);
+      if (errMsg) setErrorMessage(errMsg);
+      return jobStatus;
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to fetch status');
       setStatus('error');

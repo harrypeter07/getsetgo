@@ -91,7 +91,7 @@ function VideoCard({ video }: { video: Video }) {
         <div className="mt-3.5 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
           {/* Qualities */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            {video.available_qualities.map((q) => (
+            {(video.available_qualities || video.availableQualities || []).map((q) => (
               <span key={q} className="bg-white/10 text-white/80 px-1.5 py-0.5 rounded text-[11px] font-medium border border-white/10">
                 {q}
               </span>
@@ -100,7 +100,7 @@ function VideoCard({ video }: { video: Video }) {
 
           {/* View status */}
           <span className="text-text-secondary font-medium">
-            {video.view_count > 0 ? `${video.view_count.toLocaleString()} views` : 'Ready to stream'}
+            {(video.view_count ?? 0) > 0 ? `${(video.view_count ?? 0).toLocaleString()} views` : 'Ready to stream'}
           </span>
         </div>
       </div>
@@ -163,7 +163,7 @@ export default async function HomePage() {
 
               <div className="flex items-center gap-2 text-xs text-text-secondary font-mono bg-white/5 px-3 py-2 rounded-xl border border-white/5">
                 <span>Qualities:</span>
-                <span className="text-white font-bold">{featuredVideo.available_qualities.join(', ') || '360p, 480p, 720p'}</span>
+                <span className="text-white font-bold">{(featuredVideo.available_qualities || featuredVideo.availableQualities || []).join(', ') || '360p, 480p, 720p'}</span>
               </div>
             </div>
           </div>

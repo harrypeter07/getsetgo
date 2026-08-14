@@ -1,7 +1,42 @@
-// Shared TypeScript types for the streaming platform
+// lib/types.ts
 
-export type VideoStatus = 'processing' | 'ready' | 'failed';
-export type JobStatus = 'queued' | 'transcoding' | 'uploading' | 'done' | 'error';
+export type VideoStatus = 'queued' | 'uploading' | 'transcoding' | 'ready' | 'failed' | 'processing' | 'done' | 'error';
+export type JobStatus   = VideoStatus;
+
+export interface Video {
+  id: string;
+  title: string;
+  description?: string | null;
+  duration_seconds?: number | null;
+  durationSeconds?: number | null;
+  master_manifest_url?: string | null;
+  masterManifestUrl?: string | null;
+  available_qualities?: string[] | null;
+  availableQualities?: string[] | null;
+  thumbnail_url?: string | null;
+  thumbnailUrl?: string | null;
+  status: VideoStatus;
+  transcode_log?: Record<string, unknown> | null;
+  created_at?: string;
+  view_count?: number;
+}
+
+export interface UploadJob {
+  id?: string;
+  videoId?: string;
+  video_id?: string;
+  status?: VideoStatus;
+  progressPercent?: number;
+  progress_percent?: number;
+  currentQuality?: string;
+  error?: string;
+  error_message?: string;
+  errorMessage?: string;
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
+}
 
 export interface QualityLevel {
   label: string;
@@ -10,7 +45,7 @@ export interface QualityLevel {
   bitrateKbps: number;
 }
 
-export interface TranscodeMetadata {
+export interface TranscodeResult {
   qualities: QualityLevel[];
   masterManifestPath: string;
   durationSeconds: number;
@@ -21,58 +56,32 @@ export interface TranscodeMetadata {
   environment: 'local' | 'ci' | 'cloud';
 }
 
-export interface Video {
-  id: string;
-  title: string;
-  description?: string;
-  duration_seconds?: number;
-  master_manifest_url: string;
-  available_qualities: string[];
-  thumbnail_url?: string;
-  status: VideoStatus;
-  transcode_log?: TranscodeMetadata;
-  created_at: string;
-  view_count: number;
-}
-
-export interface UploadJob {
-  id: string;
-  video_id?: string;
-  status: JobStatus;
-  error_message?: string;
-  progress_percent: number;
-  updated_at: string;
-}
-
-export interface UploadStatusResponse {
-  status: JobStatus;
-  progressPercent: number;
-  videoId?: string;
-  errorMessage?: string;
-}
-
-export interface VideoResponse {
-  id: string;
-  title: string;
-  description?: string;
-  masterManifestUrl: string;
-  availableQualities: string[];
-  durationSeconds?: number;
-  thumbnailUrl?: string;
-  status: VideoStatus;
+export interface UploadSession {
+  sessionId: string;
+  videoId: string;
+  fileName: string;
+  fileSize: number;
+  chunkSize: number;
+  totalChunks: number;
+  uploadedChunks: number[];
 }
 
 export interface ApiError {
   error: string;
-  code: string;
+  code?: string;
 }
 
-export interface UploadResponse {
-  jobId: string;
+export interface VideoResponse extends Partial<Video> {
+  id?: string;
+  video?: Video;
+  streamUrl?: string;
 }
 
-export interface R2UploadResult {
-  masterManifestUrl: string;
-  totalBytesUploaded: number;
-  fileCount: number;
+export interface UploadStatusResponse extends Partial<UploadJob> {
+  job?: UploadJob;
+  video?: Video;
+  status?: VideoStatus;
+  progressPercent?: number;
+  videoId?: string;
+  errorMessage?: string;
 }
