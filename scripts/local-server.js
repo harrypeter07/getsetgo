@@ -278,6 +278,19 @@ function scanVideos(dir) {
 async function sendHeartbeat() {
   if (!supabase) return;
   const now = new Date().toISOString();
+
+  // Snapshot active clients for the heartbeat
+  const clientSnapshot = [];
+  for (const [ip, info] of activeClients.entries()) {
+    clientSnapshot.push({
+      ip,
+      device     : info.device,
+      connectTime: info.connectTime,
+      bytesServed: info.bytesServed,
+      chunks     : info.chunks,
+    });
+  }
+
   try {
     await supabase.from('videos').upsert({
       id                 : '00000000-0000-0000-0000-000000000000',
@@ -288,11 +301,11 @@ async function sendHeartbeat() {
         videoCount     : localVideos.length,
         targetFolder,
         serverTimestamp: now,
+        activeClients  : clientSnapshot,
         videos         : localVideos.map(v => ({
           name        : v.fileName,
           size        : v.size,
           objectUrl   : `${publicBaseUrl}/hls-init?file=${encodeURIComponent(v.filePath)}`,
-          // Use HLS URL — falls back to direct stream if HLS not ready
           hlsUrl      : `${publicBaseUrl}/hls-init?file=${encodeURIComponent(v.filePath)}`,
           streamUrl   : `${publicBaseUrl}/stream?file=${encodeURIComponent(v.filePath)}`,
           thumbnailUrl: `${publicBaseUrl}/thumbnail?file=${encodeURIComponent(v.filePath)}`,
@@ -300,7 +313,8 @@ async function sendHeartbeat() {
       }),
       created_at: now,
     });
-    log('💓', C.green, 'HEARTBEAT', `${localVideos.length} video(s) → DB updated`);
+    log('💓', C.green, 'HEARTBEAT',
+      `${localVideos.length} video(s) · ${clientSnapshot.length} client(s) → DB updated`);
   } catch (err) {
     log('⚠️ ', C.yellow, 'HEARTBEAT', `Failed: ${err.message}`);
   }

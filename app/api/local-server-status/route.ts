@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
       videoCount        : meta.videoCount || 0,
       targetFolder      : meta.targetFolder || 'C:\\ShimpliVideos',
       videos,
+      activeClients     : meta.activeClients || [],
       lastSeenSecondsAgo: ageSeconds,
       _dbStatus         : data.status,
       _timestampUsed    : timestampStr,
