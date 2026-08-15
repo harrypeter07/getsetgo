@@ -21,14 +21,24 @@ interface RemoteClient {
   chunks     : number;
 }
 
+interface ProcessingItem {
+  name    : string;
+  size    : number;
+  status  : 'queued' | 'processing' | 'error';
+  progress: number;   // 0-100
+}
+
 interface ServerStatus {
   connected         : boolean;
   targetFolder      : string;
   videoCount        : number;
+  readyCount        : number;
+  processingCount   : number;
   publicBaseUrl     : string;
   latencyMs         : number;
   lastSeenSecondsAgo: number;
   activeClients     : RemoteClient[];
+  processing        : ProcessingItem[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -324,7 +334,14 @@ export default function LocalLibraryPage() {
 
         const latencyMs = Date.now() - t0;
         if (data.connected) {
-          setServerStatus({ ...data, latencyMs });
+          setServerStatus({
+            ...data,
+            latencyMs,
+            processing     : data.processing      || [],
+            readyCount     : data.readyCount      ?? (data.videos || []).length,
+            processingCount: data.processingCount ?? 0,
+            activeClients  : data.activeClients   || [],
+          });
           const serverList: VideoItem[] = (data.videos || []).map((v: any) => ({
             name        : v.name,
             size        : v.size || 0,
@@ -382,8 +399,9 @@ export default function LocalLibraryPage() {
     setTimeout(() => document.getElementById('video-player')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }, []);
 
-  const allVideos = [...localVideos, ...videos.filter(v => !localVideos.some(l => l.name === v.name))];
-  const clients   = serverStatus?.activeClients ?? [];
+  const allVideos   = [...localVideos, ...videos.filter(v => !localVideos.some(l => l.name === v.name))];
+  const clients     = serverStatus?.activeClients ?? [];
+  const processingQ = serverStatus?.processing    ?? [];
 
   return (
     <div className="min-h-screen bg-background text-text-primary pb-16">
@@ -447,14 +465,57 @@ export default function LocalLibraryPage() {
           </div>
         )}
 
+        {/* ── Processing Queue Panel ───────────────────────────── */}
+        {processingQ.length > 0 && (
+          <div className="mb-6 bg-[#0d0d0d] border border-yellow-500/20 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+              <span className="text-white font-bold text-sm">Pre-processing Videos</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 border border-yellow-500/20">
+                {processingQ.length} in queue
+              </span>
+              <span className="ml-auto text-[10px] text-white/30 font-mono">segments ready on disk before you see them</span>
+            </div>
+            <div className="divide-y divide-white/5">
+              {processingQ.map((p, i) => (
+                <div key={i} className="px-4 py-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-white text-xs font-bold truncate max-w-[70%]">{p.name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] font-mono text-white/40">{(p.size / 1048576).toFixed(1)} MB</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                        p.status === 'processing' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                        p.status === 'error'      ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                                    'bg-white/5 text-white/40 border-white/10'
+                      }`}>
+                        {p.status === 'processing' ? `⚙️ ${p.progress}%` : p.status === 'queued' ? '⏳ Queued' : '❌ Error'}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full h-1.5 bg-white/8 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full transition-all duration-500"
+                      style={{ width: `${p.progress}%` }}
+                    />
+                  </div>
+                  {p.status === 'processing' && (
+                    <p className="text-[10px] text-white/30 mt-1 font-mono">
+                      Slicing into ≈1MB segments → will appear in library when complete
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Live Connected Clients Panel ─────────────────────── */}
-        {serverStatus?.connected && (
+        {serverStatus?.connected && clients.length > 0 && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-3">
               <h2 className="text-white font-bold text-sm">🌐 Connected Viewers</h2>
-              {clients.length > 0 && (
-                <span className="text-[10px] text-white/40 font-mono">· refreshes with heartbeat every 15s</span>
-              )}
+              <span className="text-[10px] text-white/40 font-mono">· refreshes with heartbeat every 15s</span>
             </div>
             <ClientsPanel clients={clients} />
           </div>
